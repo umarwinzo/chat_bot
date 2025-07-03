@@ -25,7 +25,8 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production' ? false : ["http://localhost:5173"],
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
@@ -33,7 +34,7 @@ const io = new Server(server, {
 const botManager = new BotManager(io);
 const dbManager = new DatabaseManager();
 const securityManager = new SecurityManager();
-const cache = new NodeCache({ stdTTL: 600 }); // 10 minutes cache
+const cache = new NodeCache({ stdTTL: 600 });
 
 // Security middleware
 app.use(helmet({
@@ -57,16 +58,16 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false
 });
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 auth requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 5,
   message: { error: 'Too many authentication attempts, please try again later.' },
   skipSuccessfulRequests: true
 });
@@ -78,7 +79,6 @@ app.use('/api', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 
 // Middleware to verify JWT token
@@ -91,14 +91,12 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
-    // Check if token is blacklisted
     if (securityManager.isTokenBlacklisted(token)) {
       return res.status(401).json({ error: 'Token has been revoked' });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Check if user still exists and is active
     const user = await dbManager.getUserById(decoded.userId);
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'User not found or inactive' });
@@ -149,7 +147,6 @@ app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Input validation
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
@@ -158,7 +155,6 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    // Security checks
     if (!securityManager.isValidEmail(email)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
@@ -167,7 +163,6 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Username must be 3-20 characters and contain only letters, numbers, and underscores' });
     }
 
-    // Check if user already exists
     const existingUser = await dbManager.getUserByEmail(email);
     if (existingUser) {
       return res.status(400).json({ error: 'User with this email already exists' });
@@ -178,10 +173,8 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Username already taken' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
     const userId = uuidv4();
     const user = await dbManager.createUser({
       id: userId,
@@ -194,14 +187,12 @@ app.post('/api/register', async (req, res) => {
       botConnected: false
     });
 
-    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Log security event
     securityManager.logSecurityEvent('USER_REGISTERED', {
       userId: user.id,
       username: user.username,
@@ -233,7 +224,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Get user from database
     const user = await dbManager.getUserByEmail(email);
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -243,23 +233,19 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'Account is deactivated' });
     }
 
-    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Update last login
     await dbManager.updateUserLastLogin(user.id);
 
-    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, username: user.username, email: user.email },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    // Log security event
     securityManager.logSecurityEvent('USER_LOGIN', {
       userId: user.id,
       username: user.username,
@@ -287,16 +273,23 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/bot/connect', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
+    const { method = 'qr', phoneNumber } = req.body;
     
-    // Check if bot is already connected
     if (botManager.isBotConnected(userId)) {
       return res.status(400).json({ error: 'Bot is already connected' });
     }
 
-    // Start bot connection process
-    await botManager.connectBot(userId);
+    if (method === 'pairing' && !phoneNumber) {
+      return res.status(400).json({ error: 'Phone number is required for pairing method' });
+    }
+
+    await botManager.connectBot(userId, method, phoneNumber);
     
-    res.json({ message: 'Bot connection initiated' });
+    res.json({ 
+      message: 'Bot connection initiated',
+      method,
+      phoneNumber: method === 'pairing' ? phoneNumber : undefined
+    });
   } catch (error) {
     console.error('Bot connection error:', error);
     res.status(500).json({ error: 'Failed to connect bot' });
@@ -345,20 +338,37 @@ app.post('/api/bot/settings', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const settings = req.body;
     
-    // Validate settings
     if (!securityManager.validateSettings(settings)) {
       return res.status(400).json({ error: 'Invalid settings data' });
     }
     
-    await dbManager.updateUserSettings(userId, settings);
+    const success = await botManager.updateBotSettings(userId, settings);
     
-    // Notify bot of settings change
-    botManager.updateBotSettings(userId, settings);
-    
-    res.json({ message: 'Settings updated successfully' });
+    if (success) {
+      res.json({ message: 'Settings updated successfully' });
+    } else {
+      res.status(500).json({ error: 'Failed to update settings' });
+    }
   } catch (error) {
     console.error('Update settings error:', error);
     res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// QR refresh endpoint
+app.post('/api/bot/refresh-qr', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const success = await botManager.refreshQR(userId);
+    
+    if (success) {
+      res.json({ message: 'QR code refresh initiated' });
+    } else {
+      res.status(400).json({ error: 'Cannot refresh QR code at this time' });
+    }
+  } catch (error) {
+    console.error('QR refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh QR code' });
   }
 });
 
@@ -368,7 +378,7 @@ app.get('/api/admin/users', authenticateAdmin, async (req, res) => {
     const users = await dbManager.getAllUsers();
     const usersWithStats = users.map(user => ({
       ...user,
-      password: undefined, // Remove password from response
+      password: undefined,
       botConnected: botManager.isBotConnected(user.id)
     }));
     
@@ -391,7 +401,7 @@ app.get('/api/admin/stats', authenticateAdmin, async (req, res) => {
       totalMessages: await dbManager.getTotalMessages(),
       totalCommands: await dbManager.getTotalCommands(),
       ramUsage: Math.round((process.memoryUsage().heapUsed / process.memoryUsage().heapTotal) * 100),
-      cpuUsage: Math.round(Math.random() * 30 + 10), // Mock CPU usage
+      cpuUsage: Math.round(Math.random() * 30 + 10),
       totalMemory: Math.round(os.totalmem() / 1024 / 1024 / 1024),
       usedMemory: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024 / 1024),
       systemUptime: Math.round(os.uptime()),
