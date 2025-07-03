@@ -1,0 +1,13 @@
+[
+  {
+    "timestamp": "2025-07-03T11:56:13.428Z",
+    "type": "USER_REGISTERED",
+    "details": {
+      "userId": "b45b0ab8-7a5f-41e7-9d6a-1479a871af3d",
+      "username": "isuru_lk",
+      "email": "admin123@gmail.com",
+      "ip": "::1"
+    },
+    "id": "95091cba-4a38-4946-8026-39f167099c81"
+  }
+]
