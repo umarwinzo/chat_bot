@@ -21,8 +21,7 @@ Queen.addCommand({
   const responseText = `🏓 *Pong!*\n\n⚡ *Response Time:* ${responseTime}ms\n🤖 *Status:* Online\n✨ *Bot Speed:* ${responseTime < 100 ? 'Excellent' : responseTime < 500 ? 'Good' : 'Average'}`;
   
   await sock.sendMessage(message.key.remoteJid, { 
-    text: responseText,
-    edit: sentMsg.key
+    text: responseText
   });
 });
 
@@ -39,35 +38,43 @@ Queen.addCommand({
 🤖 *Queen Bot Pro Menu* 🤖
 
 📋 *Available Commands:*
+
+🔧 *Utility Commands:*
 • .ping - Check bot speed
 • .menu - Show this menu
 • .info - Bot information
-• .weather - Get weather info
+• .weather <city> - Get weather info
+• .time - Current time
+• .calc <expression> - Calculator
+• .uptime - Bot uptime
+• .stats - Bot statistics
+
+🎮 *Fun Commands:*
 • .joke - Random joke
 • .quote - Inspirational quote
 • .fact - Random fact
 • .meme - Funny meme
-• .calc - Calculator
-• .qr - Generate QR code
-• .time - Current time
-• .stats - Bot statistics
+• .dice - Roll dice
+• .flip - Flip coin
 
 👑 *Admin Commands:*
-• .ban - Ban user (admin only)
-• .kick - Kick user (admin only)
-• .promote - Promote user
-• .demote - Demote user
-• .everyone - Tag all members
+• .kick @user - Remove user (admin only)
+• .promote @user - Promote user (admin only)
+• .demote @user - Demote user (admin only)
+• .everyone <message> - Tag all members
+• .mute - Mute group (admin only)
+• .unmute - Unmute group (admin only)
 
 🎨 *Media Commands:*
-• .sticker - Create sticker
-• .toimg - Sticker to image
+• .sticker - Create sticker from image
+• .toimg - Convert sticker to image
 
 🤖 *AI Commands:*
-• .ai - AI chat responses
-• .news - Latest news
+• .ai <question> - AI chat responses
+• .news [category] - Latest news
 
-Type any command with ${Queen.config.PREFIX} prefix to use!
+Type any command with . prefix to use!
+Example: .ping or .weather London
 `;
 
   await sock.sendMessage(message.key.remoteJid, { text: menuText });
@@ -85,7 +92,7 @@ Queen.addCommand({
   const infoText = `
 🤖 *Queen Bot Pro Information* 🤖
 
-📱 *Name:* ${Queen.config.BOT_NAME}
+📱 *Name:* Queen Bot Pro
 🎯 *Version:* 3.0.0
 👨‍💻 *Developer:* DarkWinzo
 🌟 *Features:* Multi-language, Plugin-based
@@ -120,26 +127,25 @@ Queen.addCommand({
   const statsText = `
 📊 *Bot Statistics* 📊
 
-⏰ *Uptime:* 24h 30m
-👥 *Total Users:* 150
-👥 *Groups:* 25
-💬 *Messages:* 5,420
-🚀 *Commands Used:* 1,230
-🔧 *Active Commands:* 25
+⏰ *Uptime:* ${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m
+👥 *Total Users:* Active
+💬 *Messages:* Processing
+🚀 *Commands Used:* Working
+🔧 *Active Commands:* 25+
 📈 *Success Rate:* 99.2%
 
 🎯 *Performance:*
 • Response Time: <100ms
-• Memory Usage: 45%
-• CPU Usage: 12%
+• Memory Usage: ${Math.round((process.memoryUsage().heapUsed / process.memoryUsage().heapTotal) * 100)}%
+• CPU Usage: Active
 • Status: Excellent
 
 💡 *Popular Commands:*
-1. .ping - 245 uses
-2. .sticker - 189 uses
-3. .weather - 156 uses
-4. .joke - 134 uses
-5. .ai - 98 uses
+1. .ping - Speed test
+2. .menu - Command list
+3. .weather - Weather info
+4. .joke - Entertainment
+5. .ai - AI responses
 `;
 
   await sock.sendMessage(message.key.remoteJid, { text: statsText });

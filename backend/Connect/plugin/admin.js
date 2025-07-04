@@ -12,7 +12,9 @@ Queen.addCommand({
 }, async (message, sock) => {
   try {
     if (!message.key.remoteJid.endsWith('@g.us')) {
-      await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("This command only works in groups!") });
+      await sock.sendMessage(message.key.remoteJid, { 
+        text: "❌ This command only works in groups!\n\n💡 Use this command in a WhatsApp group." 
+      });
       return;
     }
 
@@ -20,14 +22,25 @@ Queen.addCommand({
     const mentionedJids = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     
     if (mentionedJids.length === 0) {
-      await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Please mention a user to kick!") });
+      await sock.sendMessage(message.key.remoteJid, { 
+        text: "❌ Please mention a user to kick!\n\n📝 Usage: .kick @username\n💡 Example: .kick @john" 
+      });
       return;
     }
 
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "⏳ Kicking user(s)..." 
+    });
+
     await sock.groupParticipantsUpdate(message.key.remoteJid, mentionedJids, 'remove');
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.successfulMessage("User(s) kicked successfully!") });
+    
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: `✅ *User(s) kicked successfully!*\n\n👢 Removed ${mentionedJids.length} user(s) from the group.\n\n🛡️ *Action by Queen Bot Pro*` 
+    });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to kick user(s)!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to kick user(s)!\n\n🔧 *Possible reasons:*\n• Bot is not admin\n• User is admin\n• Network error\n\n💡 Make sure bot has admin privileges." 
+    });
   }
 });
 
@@ -45,14 +58,25 @@ Queen.addCommand({
     const mentionedJids = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     
     if (mentionedJids.length === 0) {
-      await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Please mention a user to promote!") });
+      await sock.sendMessage(message.key.remoteJid, { 
+        text: "❌ Please mention a user to promote!\n\n📝 Usage: .promote @username\n💡 Example: .promote @john" 
+      });
       return;
     }
 
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "⏳ Promoting user(s)..." 
+    });
+
     await sock.groupParticipantsUpdate(message.key.remoteJid, mentionedJids, 'promote');
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.successfulMessage("User(s) promoted successfully!") });
+    
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: `✅ *User(s) promoted successfully!*\n\n👑 Promoted ${mentionedJids.length} user(s) to admin.\n\n🎉 *Congratulations to the new admin(s)!*\n\n🛡️ *Action by Queen Bot Pro*` 
+    });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to promote user(s)!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to promote user(s)!\n\n🔧 *Possible reasons:*\n• Bot is not admin\n• User is already admin\n• Network error\n\n💡 Make sure bot has admin privileges." 
+    });
   }
 });
 
@@ -70,19 +94,30 @@ Queen.addCommand({
     const mentionedJids = message.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     
     if (mentionedJids.length === 0) {
-      await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Please mention a user to demote!") });
+      await sock.sendMessage(message.key.remoteJid, { 
+        text: "❌ Please mention a user to demote!\n\n📝 Usage: .demote @username\n💡 Example: .demote @john" 
+      });
       return;
     }
 
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "⏳ Demoting user(s)..." 
+    });
+
     await sock.groupParticipantsUpdate(message.key.remoteJid, mentionedJids, 'demote');
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.successfulMessage("User(s) demoted successfully!") });
+    
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: `✅ *User(s) demoted successfully!*\n\n📉 Demoted ${mentionedJids.length} user(s) from admin.\n\n🛡️ *Action by Queen Bot Pro*` 
+    });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to demote user(s)!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to demote user(s)!\n\n🔧 *Possible reasons:*\n• Bot is not admin\n• User is not admin\n• Network error\n\n💡 Make sure bot has admin privileges." 
+    });
   }
 });
 
 Queen.addCommand({
-  pattern: ["everyone", "tagall"],
+  pattern: ["everyone", "tagall", "all"],
   category: "admin",
   onlyGroup: true,
   onlyPm: false,
@@ -95,7 +130,7 @@ Queen.addCommand({
     const groupMetadata = await sock.groupMetadata(message.key.remoteJid);
     const participants = groupMetadata.participants;
     
-    const text = args.join(' ') || 'Attention everyone!';
+    const text = args.join(' ') || 'Attention everyone! 📢';
     let mentions = [];
     let mentionText = '';
     
@@ -104,12 +139,16 @@ Queen.addCommand({
       mentionText += `@${participant.id.split('@')[0]} `;
     }
 
+    const finalMessage = `📢 *${text}*\n\n👥 *Tagged Members:*\n${mentionText}\n\n🔔 *Total:* ${participants.length} members\n🤖 *By Queen Bot Pro*`;
+
     await sock.sendMessage(message.key.remoteJid, { 
-      text: `${text}\n\n${mentionText}`,
+      text: finalMessage,
       mentions: mentions
     });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to tag everyone!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to tag everyone!\n\n🔧 *Error:* Could not fetch group members\n💡 Make sure bot has proper permissions." 
+    });
   }
 });
 
@@ -124,10 +163,19 @@ Queen.addCommand({
   usage: ".mute"
 }, async (message, sock) => {
   try {
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "⏳ Muting group..." 
+    });
+
     await sock.groupSettingUpdate(message.key.remoteJid, 'announcement');
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.successfulMessage("Group muted! Only admins can send messages now.") });
+    
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: `🔇 *Group Muted Successfully!*\n\n🔒 Only admins can send messages now.\n⏰ Muted at: ${new Date().toLocaleString()}\n\n🛡️ *Action by Queen Bot Pro*` 
+    });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to mute group!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to mute group!\n\n🔧 *Possible reasons:*\n• Bot is not admin\n• Network error\n\n💡 Make sure bot has admin privileges." 
+    });
   }
 });
 
@@ -142,10 +190,19 @@ Queen.addCommand({
   usage: ".unmute"
 }, async (message, sock) => {
   try {
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "⏳ Unmuting group..." 
+    });
+
     await sock.groupSettingUpdate(message.key.remoteJid, 'not_announcement');
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.successfulMessage("Group unmuted! Everyone can send messages now.") });
+    
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: `🔊 *Group Unmuted Successfully!*\n\n🔓 Everyone can send messages now.\n⏰ Unmuted at: ${new Date().toLocaleString()}\n\n🛡️ *Action by Queen Bot Pro*` 
+    });
   } catch (error) {
-    await sock.sendMessage(message.key.remoteJid, { text: Queen.errorMessage("Failed to unmute group!") });
+    await sock.sendMessage(message.key.remoteJid, { 
+      text: "❌ Failed to unmute group!\n\n🔧 *Possible reasons:*\n• Bot is not admin\n• Network error\n\n💡 Make sure bot has admin privileges." 
+    });
   }
 });
 
