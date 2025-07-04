@@ -48,7 +48,15 @@ import {
   XCircle,
   Sparkles,
   Waves,
-  Signal
+  Signal,
+  Download,
+  Upload,
+  Scan,
+  Key,
+  Lock,
+  Unlock,
+  Timer,
+  RotateCcw
 } from 'lucide-react';
 
 interface BotStatus {
@@ -138,6 +146,9 @@ export default function Dashboard() {
   const [showPhoneNumber, setShowPhoneNumber] = useState(false);
   const [copied, setCopied] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [qrExpiring, setQrExpiring] = useState(false);
+  const [pairingExpired, setPairingExpired] = useState(false);
+  const [connectionProgress, setConnectionProgress] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -157,9 +168,14 @@ export default function Dashboard() {
       if (data.userId === user?.id) {
         setQrCode(data.qrCode);
         setLoading(false);
-        toast.success('QR Code generated! Scan with WhatsApp', {
-          icon: '📱',
-          duration: 5000
+        setQrExpiring(false);
+        setConnectionProgress(50);
+        toast.success('📱 High-quality QR Code generated! Scan with WhatsApp', {
+          duration: 8000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
         });
       }
     });
@@ -168,8 +184,33 @@ export default function Dashboard() {
       if (data.userId === user?.id) {
         setPairingCode(data.code);
         setLoading(false);
-        toast.success('Pairing code generated!', {
-          icon: '🔢',
+        setPairingExpired(false);
+        setConnectionProgress(50);
+        toast.success(`🔢 Pairing code generated: ${data.code}`, {
+          duration: 10000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
+      }
+    });
+
+    newSocket.on('qr-expiring', (data) => {
+      if (data.userId === user?.id) {
+        setQrExpiring(true);
+        toast('🔄 QR code expiring soon, generating new one...', { 
+          icon: '⏰',
+          duration: 3000 
+        });
+      }
+    });
+
+    newSocket.on('pairing-expired', (data) => {
+      if (data.userId === user?.id) {
+        setPairingExpired(true);
+        setPairingCode(null);
+        toast.error('⏰ Pairing code expired. Please generate a new one.', {
           duration: 5000
         });
       }
@@ -178,7 +219,8 @@ export default function Dashboard() {
     newSocket.on('bot-connecting', (data) => {
       if (data.userId === user?.id) {
         setBotStatus(prev => ({ ...prev, connectionState: 'connecting' }));
-        toast.loading('Connecting to WhatsApp...', { id: 'connecting' });
+        setConnectionProgress(25);
+        toast.loading('🔗 Connecting to WhatsApp...', { id: 'connecting' });
       }
     });
 
@@ -186,7 +228,8 @@ export default function Dashboard() {
       if (data.userId === user?.id) {
         setReconnectAttempt(data.attempt || 1);
         setBotStatus(prev => ({ ...prev, connectionState: 'reconnecting' }));
-        toast.loading(`Reconnecting... (${data.attempt}/3)`, { id: 'reconnecting' });
+        setConnectionProgress(30);
+        toast.loading(`🔄 Reconnecting... (${data.attempt}/3)`, { id: 'reconnecting' });
       }
     });
 
@@ -202,14 +245,18 @@ export default function Dashboard() {
         setPairingCode(null);
         setLoading(false);
         setReconnectAttempt(0);
+        setConnectionProgress(100);
         toast.dismiss();
         toast.success('🎉 Bot connected successfully!', {
-          duration: 6000,
+          duration: 8000,
           style: {
             background: 'linear-gradient(135deg, #10B981, #059669)',
             color: 'white'
           }
         });
+        
+        // Reset progress after animation
+        setTimeout(() => setConnectionProgress(0), 2000);
       }
     });
 
@@ -224,17 +271,10 @@ export default function Dashboard() {
         setQrCode(null);
         setPairingCode(null);
         setLoading(false);
+        setConnectionProgress(0);
         toast.dismiss();
-        toast.error('Bot disconnected', { icon: '🔌' });
-      }
-    });
-
-    newSocket.on('bot-error', (data) => {
-      if (data.userId === user?.id) {
-        setLoading(false);
-        toast.dismiss();
-        toast.error(data.error, {
-          duration: 6000,
+        toast.error('🔌 Bot disconnected', { 
+          duration: 5000,
           style: {
             background: 'linear-gradient(135deg, #EF4444, #DC2626)',
             color: 'white'
@@ -243,16 +283,51 @@ export default function Dashboard() {
       }
     });
 
+    newSocket.on('bot-error', (data) => {
+      if (data.userId === user?.id) {
+        setLoading(false);
+        setConnectionProgress(0);
+        toast.dismiss();
+        
+        let errorMessage = data.error;
+        let toastStyle = {
+          background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+          color: 'white'
+        };
+        
+        if (data.type === 'pairing') {
+          errorMessage = `📱 ${errorMessage}\n\nTips:\n• Include country code (e.g., 1234567890)\n• Remove spaces and special characters\n• Try QR code method instead`;
+        } else if (data.type === 'qr') {
+          errorMessage = `📱 ${errorMessage}\n\nTips:\n• Ensure good internet connection\n• Try refreshing the page\n• Use pairing code method instead`;
+        }
+        
+        toast.error(errorMessage, {
+          duration: 10000,
+          style: toastStyle
+        });
+      }
+    });
+
     newSocket.on('qr-expired', (data) => {
       if (data.userId === user?.id) {
         setQrCode(null);
-        toast('QR code expired. Generating new one...', { icon: '🔄' });
+        setQrExpiring(false);
+        toast('🔄 QR code expired. Generating new one...', { 
+          icon: '⏰',
+          duration: 3000 
+        });
       }
     });
 
     newSocket.on('settings-updated', (data) => {
       if (data.userId === user?.id) {
-        toast.success('Settings updated successfully!', { icon: '⚙️' });
+        toast.success('⚙️ Settings updated successfully!', {
+          duration: 4000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
       }
     });
 
@@ -291,19 +366,19 @@ export default function Dashboard() {
 
   const connectBot = async () => {
     if (botStatus.connected) {
-      toast.error('Bot is already connected!');
+      toast.error('🤖 Bot is already connected!');
       return;
     }
 
     if (connectionMethod === 'pairing' && !phoneNumber) {
-      toast.error('Please enter your phone number with country code');
+      toast.error('📱 Please enter your phone number with country code\n\nExample: 1234567890 (without + or spaces)');
       return;
     }
 
     if (connectionMethod === 'pairing') {
       const cleanNumber = phoneNumber.replace(/[^\d]/g, '');
       if (cleanNumber.length < 10 || cleanNumber.length > 15) {
-        toast.error('Please enter a valid phone number with country code');
+        toast.error('📱 Please enter a valid phone number with country code\n\nExample: 1234567890 (10-15 digits)');
         return;
       }
     }
@@ -311,6 +386,9 @@ export default function Dashboard() {
     setLoading(true);
     setQrCode(null);
     setPairingCode(null);
+    setQrExpiring(false);
+    setPairingExpired(false);
+    setConnectionProgress(10);
 
     try {
       const response = await fetch('/api/bot/connect', {
@@ -326,16 +404,25 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        toast.success(`Connecting via ${connectionMethod}...`, { icon: '🚀' });
+        setConnectionProgress(20);
+        toast.success(`🚀 Connecting via ${connectionMethod}...`, { 
+          duration: 5000,
+          style: {
+            background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+            color: 'white'
+          }
+        });
       } else {
         const error = await response.json();
-        toast.error(error.error);
+        toast.error(`❌ ${error.error}`);
         setLoading(false);
+        setConnectionProgress(0);
       }
     } catch (error) {
       console.error('Error connecting bot:', error);
-      toast.error('Failed to connect bot');
+      toast.error('❌ Failed to connect bot. Please check your internet connection.');
       setLoading(false);
+      setConnectionProgress(0);
     }
   };
 
@@ -347,11 +434,11 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        toast.success('Bot disconnected successfully');
+        toast.success('✅ Bot disconnected successfully');
       }
     } catch (error) {
       console.error('Error disconnecting bot:', error);
-      toast.error('Failed to disconnect bot');
+      toast.error('❌ Failed to disconnect bot');
     }
   };
 
@@ -387,7 +474,7 @@ export default function Dashboard() {
     if (pairingCode) {
       navigator.clipboard.writeText(pairingCode);
       setCopied(true);
-      toast.success('Pairing code copied!');
+      toast.success('📋 Pairing code copied to clipboard!');
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -400,11 +487,13 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        toast.success('Refreshing connection...');
+        toast.success('🔄 Refreshing connection...');
+        setQrCode(null);
+        setPairingCode(null);
       }
     } catch (error) {
       console.error('Error refreshing connection:', error);
-      toast.error('Failed to refresh connection');
+      toast.error('❌ Failed to refresh connection');
     }
   };
 
@@ -466,8 +555,11 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-r from-purple-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center floating-animation">
+              <div className="bg-gradient-to-r from-purple-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center floating-animation relative">
                 <Bot className="w-8 h-8 text-white" />
+                {botStatus.connected && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+                )}
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-white">WhatsApp Bot Dashboard</h1>
@@ -475,11 +567,17 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className={`flex items-center space-x-2 px-4 py-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/20`}>
-                <div className={getConnectionStatusColor()}>
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/20 relative overflow-hidden`}>
+                {connectionProgress > 0 && (
+                  <div 
+                    className="absolute inset-0 bg-gradient-to-r from-blue-500/30 to-green-500/30 transition-all duration-1000"
+                    style={{ width: `${connectionProgress}%` }}
+                  />
+                )}
+                <div className={`relative z-10 ${getConnectionStatusColor()}`}>
                   {getConnectionStatusIcon()}
                 </div>
-                <span className={`text-sm font-medium ${getConnectionStatusColor()}`}>
+                <span className={`relative z-10 text-sm font-medium ${getConnectionStatusColor()}`}>
                   {getConnectionStatusText()}
                 </span>
               </div>
@@ -597,12 +695,22 @@ export default function Dashboard() {
                           <p className="text-blue-300 font-medium">Scan with WhatsApp</p>
                         </div>
                       </div>
-                      <p className="text-white/80 leading-relaxed">
+                      <p className="text-white/80 leading-relaxed mb-4">
                         Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan the QR code that appears.
                       </p>
-                      <div className="mt-6 flex items-center space-x-2 text-green-400">
-                        <CheckCircle className="w-5 h-5" />
-                        <span className="text-sm font-medium">Recommended for most users</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">High-quality QR generation</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">Auto-refresh on expiry</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">Recommended for most users</span>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -628,12 +736,22 @@ export default function Dashboard() {
                           <p className="text-green-300 font-medium">Use pairing code</p>
                         </div>
                       </div>
-                      <p className="text-white/80 leading-relaxed">
+                      <p className="text-white/80 leading-relaxed mb-4">
                         Enter your phone number to receive a pairing code that you can enter in WhatsApp for secure connection.
                       </p>
-                      <div className="mt-6 flex items-center space-x-2 text-blue-400">
-                        <Shield className="w-5 h-5" />
-                        <span className="text-sm font-medium">Enhanced security</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Shield className="w-4 h-4" />
+                          <span className="text-sm">Enhanced security</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Key className="w-4 h-4" />
+                          <span className="text-sm">6-digit pairing code</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Timer className="w-4 h-4" />
+                          <span className="text-sm">60-second validity</span>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -658,7 +776,7 @@ export default function Dashboard() {
                             type="tel"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
-                            placeholder="+1234567890"
+                            placeholder="1234567890"
                             className="w-full bg-black/30 border border-white/30 rounded-xl pl-14 pr-14 py-4 text-white text-lg placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                           />
                           <button
@@ -669,9 +787,14 @@ export default function Dashboard() {
                             {showPhoneNumber ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
                           </button>
                         </div>
-                        <p className="text-green-300/80 text-sm mt-3">
-                          Example: +1234567890 (include country code without spaces)
-                        </p>
+                        <div className="mt-4 space-y-2">
+                          <p className="text-green-300/80 text-sm">
+                            <strong>Format:</strong> Country code + phone number (no + or spaces)
+                          </p>
+                          <p className="text-green-300/80 text-sm">
+                            <strong>Examples:</strong> 1234567890 (US), 447123456789 (UK), 919876543210 (India)
+                          </p>
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -684,19 +807,27 @@ export default function Dashboard() {
                     whileTap={{ scale: 0.95 }}
                     onClick={connectBot}
                     disabled={loading || botStatus.connected}
-                    className="flex items-center space-x-3 px-12 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white rounded-2xl font-bold text-lg hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-2xl"
+                    className="flex items-center space-x-3 px-12 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white rounded-2xl font-bold text-lg hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-2xl relative overflow-hidden"
                   >
-                    {loading ? (
-                      <Loader className="w-6 h-6 animate-spin" />
-                    ) : botStatus.connected ? (
-                      <CheckCircle className="w-6 h-6" />
-                    ) : (
-                      <Zap className="w-6 h-6" />
+                    {connectionProgress > 0 && (
+                      <div 
+                        className="absolute inset-0 bg-white/20 transition-all duration-1000"
+                        style={{ width: `${connectionProgress}%` }}
+                      />
                     )}
-                    <span>
-                      {loading ? 'Connecting...' : botStatus.connected ? 'Connected' : 'Connect Bot'}
-                    </span>
-                    {!loading && !botStatus.connected && <Sparkles className="w-6 h-6" />}
+                    <div className="relative z-10 flex items-center space-x-3">
+                      {loading ? (
+                        <Loader className="w-6 h-6 animate-spin" />
+                      ) : botStatus.connected ? (
+                        <CheckCircle className="w-6 h-6" />
+                      ) : (
+                        <Zap className="w-6 h-6" />
+                      )}
+                      <span>
+                        {loading ? 'Connecting...' : botStatus.connected ? 'Connected' : 'Connect Bot'}
+                      </span>
+                      {!loading && !botStatus.connected && <Sparkles className="w-6 h-6" />}
+                    </div>
                   </motion.button>
 
                   {botStatus.connected && (
@@ -721,9 +852,9 @@ export default function Dashboard() {
                       whileTap={{ scale: 0.95 }}
                       onClick={refreshConnection}
                       className="p-4 text-white/70 hover:text-white hover:bg-white/10 rounded-2xl transition-colors border border-white/20"
-                      title="Refresh"
+                      title="Refresh Connection"
                     >
-                      <RefreshCw className="w-6 h-6" />
+                      <RotateCcw className="w-6 h-6" />
                     </motion.button>
                   )}
                 </div>
@@ -739,27 +870,55 @@ export default function Dashboard() {
                     className="glass-effect rounded-2xl p-8 text-center"
                   >
                     <div className="mb-6">
-                      <h3 className="text-2xl font-bold text-white mb-2">Scan QR Code</h3>
+                      <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center space-x-2">
+                        <Scan className="w-6 h-6" />
+                        <span>Scan QR Code</span>
+                      </h3>
                       <p className="text-white/70">Use your WhatsApp mobile app to scan this code</p>
+                      {qrExpiring && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-yellow-400 text-sm mt-2 flex items-center justify-center space-x-1"
+                        >
+                          <Timer className="w-4 h-4" />
+                          <span>QR code expiring soon, generating new one...</span>
+                        </motion.p>
+                      )}
                     </div>
                     
                     <div className="relative inline-block mb-6">
-                      <div className="bg-white p-6 rounded-3xl shadow-2xl">
+                      <div className="bg-white p-8 rounded-3xl shadow-2xl">
                         <img src={qrCode} alt="QR Code" className="w-80 h-80" />
                       </div>
                       <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl opacity-20 animate-pulse"></div>
+                      {qrExpiring && (
+                        <div className="absolute inset-0 bg-yellow-500/20 rounded-3xl animate-pulse"></div>
+                      )}
                     </div>
                     
                     <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-2xl p-6">
                       <div className="flex items-center justify-center space-x-2 mb-3">
                         <Smartphone className="w-5 h-5 text-blue-400" />
-                        <span className="text-white font-semibold">Instructions</span>
+                        <span className="text-white font-semibold">Step-by-Step Instructions</span>
                       </div>
                       <ol className="text-white/80 text-left space-y-2">
-                        <li>1. Open WhatsApp on your phone</li>
-                        <li>2. Go to Settings → Linked Devices</li>
-                        <li>3. Tap "Link a Device"</li>
-                        <li>4. Scan this QR code</li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                          <span>Open WhatsApp on your phone</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                          <span>Go to Settings → Linked Devices</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                          <span>Tap "Link a Device"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+                          <span>Scan this QR code</span>
+                        </li>
                       </ol>
                     </div>
                   </motion.div>
@@ -776,11 +935,24 @@ export default function Dashboard() {
                     className="glass-effect rounded-2xl p-8 text-center"
                   >
                     <div className="mb-6">
-                      <h3 className="text-2xl font-bold text-white mb-2">Pairing Code</h3>
+                      <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center space-x-2">
+                        <Key className="w-6 h-6" />
+                        <span>Pairing Code</span>
+                      </h3>
                       <p className="text-white/70">Enter this code in WhatsApp</p>
+                      {pairingExpired && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-red-400 text-sm mt-2 flex items-center justify-center space-x-1"
+                        >
+                          <Timer className="w-4 h-4" />
+                          <span>Pairing code expired. Please generate a new one.</span>
+                        </motion.p>
+                      )}
                     </div>
                     
-                    <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-2xl p-8 mb-6">
+                    <div className={`bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-2xl p-8 mb-6 ${pairingExpired ? 'opacity-50' : ''}`}>
                       <div className="text-6xl font-mono font-bold text-white mb-4 tracking-wider">
                         {pairingCode}
                       </div>
@@ -788,7 +960,8 @@ export default function Dashboard() {
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={copyPairingCode}
-                        className="flex items-center space-x-2 mx-auto px-6 py-3 bg-green-500/20 text-green-300 rounded-xl hover:bg-green-500/30 transition-colors border border-green-500/30"
+                        disabled={pairingExpired}
+                        className="flex items-center space-x-2 mx-auto px-6 py-3 bg-green-500/20 text-green-300 rounded-xl hover:bg-green-500/30 transition-colors border border-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                         <span className="font-semibold">{copied ? 'Copied!' : 'Copy Code'}</span>
@@ -798,14 +971,29 @@ export default function Dashboard() {
                     <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-2xl p-6">
                       <div className="flex items-center justify-center space-x-2 mb-3">
                         <Phone className="w-5 h-5 text-green-400" />
-                        <span className="text-white font-semibold">Instructions</span>
+                        <span className="text-white font-semibold">Step-by-Step Instructions</span>
                       </div>
                       <ol className="text-white/80 text-left space-y-2">
-                        <li>1. Open WhatsApp on your phone</li>
-                        <li>2. Go to Settings → Linked Devices</li>
-                        <li>3. Tap "Link a Device"</li>
-                        <li>4. Select "Link with phone number instead"</li>
-                        <li>5. Enter the pairing code above</li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                          <span>Open WhatsApp on your phone</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                          <span>Go to Settings → Linked Devices</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                          <span>Tap "Link a Device"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+                          <span>Select "Link with phone number instead"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">5</span>
+                          <span>Enter the pairing code: <strong>{pairingCode}</strong></span>
+                        </li>
                       </ol>
                     </div>
                   </motion.div>

@@ -47,6 +47,7 @@ export class BotManager extends EventEmitter {
     this.botLogs = new Map();
     this.connectionStates = new Map();
     this.reconnectAttempts = new Map();
+    this.connectionTimeouts = new Map();
     
     // Ensure auth directory exists
     this.authDir = path.join(__dirname, '../auth');
@@ -62,7 +63,7 @@ export class BotManager extends EventEmitter {
       if (this.bots.has(userId)) {
         this.logBotEvent(userId, 'Cleaning up existing connection...');
         await this.cleanupBot(userId);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
       this.logBotEvent(userId, `Starting bot connection via ${method}`);
@@ -85,7 +86,7 @@ export class BotManager extends EventEmitter {
       });
       this.stores.set(userId, store);
 
-      // Socket configuration with improved settings
+      // Enhanced socket configuration for better connection
       const socketConfig = {
         version,
         logger: pino({ level: 'silent' }),
@@ -103,6 +104,7 @@ export class BotManager extends EventEmitter {
         keepAliveIntervalMs: 30000,
         retryRequestDelayMs: 250,
         maxMsgRetryCount: 5,
+        qrTimeout: 60000, // 60 seconds QR timeout
         getMessage: async (key) => {
           if (store) {
             const msg = await store.loadMessage(key.remoteJid, key.id);
@@ -124,6 +126,21 @@ export class BotManager extends EventEmitter {
       store?.bind(sock.ev);
 
       this.bots.set(userId, sock);
+
+      // Set connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (!this.isBotConnected(userId)) {
+          this.logBotEvent(userId, 'Connection timeout - cleaning up');
+          this.cleanupBot(userId);
+          this.io.to(`user-${userId}`).emit('bot-error', { 
+            userId, 
+            error: 'Connection timeout. Please try again.',
+            type: 'timeout'
+          });
+        }
+      }, 120000); // 2 minutes timeout
+
+      this.connectionTimeouts.set(userId, connectionTimeout);
 
       // Event handlers
       sock.ev.on('connection.update', async (update) => {
@@ -156,11 +173,10 @@ export class BotManager extends EventEmitter {
         await this.handleGroupsUpsert(userId, groups);
       });
 
-      // Add error handling
+      // Enhanced error handling
       sock.ev.on('connection.update', (update) => {
         if (update.lastDisconnect?.error) {
           const statusCode = update.lastDisconnect.error?.output?.statusCode;
-
           this.logBotEvent(userId, `Connection error: ${statusCode} - ${update.lastDisconnect.error.message}`);
         }
       });
@@ -171,6 +187,7 @@ export class BotManager extends EventEmitter {
       console.error(`Error connecting bot for user ${userId}:`, error);
       this.logBotEvent(userId, `Connection error: ${error.message}`);
       this.connectionStates.set(userId, 'error');
+      this.cleanupBot(userId);
       this.io.to(`user-${userId}`).emit('bot-error', { 
         userId, 
         error: error.message,
@@ -185,76 +202,131 @@ export class BotManager extends EventEmitter {
 
     this.logBotEvent(userId, `Connection update: ${connection || 'unknown'}`);
 
-    // Handle QR code generation
+    // Clear connection timeout on any update
+    if (this.connectionTimeouts.has(userId)) {
+      clearTimeout(this.connectionTimeouts.get(userId));
+      this.connectionTimeouts.delete(userId);
+    }
+
+    // Handle QR code generation with enhanced settings
     if (qr && method === 'qr') {
       try {
+        // Generate high-quality QR code with better settings
         const qrCodeDataURL = await QRCode.toDataURL(qr, {
-          width: 512,
-          margin: 2,
+          width: 600,
+          margin: 4,
           color: {
             dark: '#000000',
             light: '#FFFFFF'
           },
-          errorCorrectionLevel: 'H'
+          errorCorrectionLevel: 'H',
+          type: 'image/png',
+          quality: 1.0,
+          rendererOpts: {
+            quality: 1.0
+          }
         });
         
         this.io.to(`user-${userId}`).emit('qr-code', {
           userId,
           qrCode: qrCodeDataURL,
-          method: 'qr'
+          method: 'qr',
+          timestamp: Date.now()
         });
         
-        this.logBotEvent(userId, 'QR code generated and sent to client');
+        this.logBotEvent(userId, 'High-quality QR code generated and sent to client');
         
         // Set QR retry count
         const retryCount = this.qrRetryCount.get(userId) || 0;
         this.qrRetryCount.set(userId, retryCount + 1);
         
-        // Auto-refresh QR after 45 seconds
+        // Auto-refresh QR after 50 seconds (before it expires)
         setTimeout(() => {
-          if (!this.isBotConnected(userId) && this.qrRetryCount.get(userId) < 3) {
-            this.logBotEvent(userId, 'QR code expired, generating new one...');
-            this.io.to(`user-${userId}`).emit('qr-expired', { userId });
+          if (!this.isBotConnected(userId) && this.qrRetryCount.get(userId) < 5) {
+            this.logBotEvent(userId, 'QR code expiring soon, will generate new one...');
+            this.io.to(`user-${userId}`).emit('qr-expiring', { userId });
           }
-        }, 45000);
+        }, 50000);
         
       } catch (error) {
         console.error('QR code generation error:', error);
         this.logBotEvent(userId, `QR generation error: ${error.message}`);
         this.io.to(`user-${userId}`).emit('bot-error', { 
           userId, 
-          error: 'Failed to generate QR code',
+          error: 'Failed to generate QR code. Please try again.',
           type: 'qr'
         });
       }
     }
 
-    // Handle pairing code for mobile
+    // Handle pairing code for mobile with enhanced validation
     if (method === 'pairing' && phoneNumber && !this.isBotConnected(userId)) {
       try {
         const sock = this.bots.get(userId);
         if (sock && !sock.authState?.creds?.registered) {
-          // Clean phone number format - remove all non-digits
-          const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '');
+          // Enhanced phone number cleaning and validation
+          let cleanPhoneNumber = phoneNumber.replace(/[^\d+]/g, '');
           
-          // Validate phone number
+          // Remove leading + if present, we'll add it back
+          if (cleanPhoneNumber.startsWith('+')) {
+            cleanPhoneNumber = cleanPhoneNumber.substring(1);
+          }
+          
+          // Validate phone number length and format
           if (cleanPhoneNumber.length < 10 || cleanPhoneNumber.length > 15) {
-            throw new Error('Invalid phone number format. Please include country code.');
+            throw new Error('Invalid phone number format. Please include country code (e.g., 1234567890)');
+          }
+          
+          // Ensure it starts with a country code
+          if (!cleanPhoneNumber.match(/^[1-9]\d{9,14}$/)) {
+            throw new Error('Invalid phone number format. Please include country code without + or spaces');
           }
           
           this.logBotEvent(userId, `Requesting pairing code for: +${cleanPhoneNumber}`);
           
-          const code = await sock.requestPairingCode(cleanPhoneNumber);
+          // Request pairing code with retry mechanism
+          let code;
+          let attempts = 0;
+          const maxAttempts = 3;
+          
+          while (attempts < maxAttempts) {
+            try {
+              code = await sock.requestPairingCode(cleanPhoneNumber);
+              break;
+            } catch (error) {
+              attempts++;
+              if (attempts >= maxAttempts) {
+                throw error;
+              }
+              this.logBotEvent(userId, `Pairing code attempt ${attempts} failed, retrying...`);
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+          
+          if (!code) {
+            throw new Error('Failed to generate pairing code after multiple attempts');
+          }
+          
           this.pairingCodes.set(userId, code);
           
           this.io.to(`user-${userId}`).emit('pairing-code', {
             userId,
             code,
             phoneNumber: cleanPhoneNumber,
-            method: 'pairing'
+            method: 'pairing',
+            timestamp: Date.now()
           });
           
-          this.logBotEvent(userId, `Pairing code generated: ${code}`);
+          this.logBotEvent(userId, `Pairing code generated successfully: ${code}`);
+          
+          // Set pairing code expiry (usually 60 seconds)
+          setTimeout(() => {
+            if (!this.isBotConnected(userId)) {
+              this.pairingCodes.delete(userId);
+              this.io.to(`user-${userId}`).emit('pairing-expired', { userId });
+              this.logBotEvent(userId, 'Pairing code expired');
+            }
+          }, 60000);
         }
       } catch (error) {
         console.error('Pairing code generation error:', error);
@@ -270,7 +342,7 @@ export class BotManager extends EventEmitter {
     if (connection === 'close') {
       this.connectionStates.set(userId, 'disconnected');
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-
+      
       if (shouldReconnect) {
         const attempts = this.reconnectAttempts.get(userId) || 0;
         
@@ -280,13 +352,14 @@ export class BotManager extends EventEmitter {
           
           this.io.to(`user-${userId}`).emit('bot-reconnecting', { userId, attempt: attempts + 1 });
           
-          // Exponential backoff
-          const delay = Math.min(5000 * Math.pow(2, attempts), 30000);
+          // Exponential backoff with jitter
+          const delay = Math.min(5000 * Math.pow(2, attempts) + Math.random() * 1000, 30000);
           setTimeout(() => {
             this.connectBot(userId, method, phoneNumber);
           }, delay);
         } else {
           this.logBotEvent(userId, 'Max reconnection attempts reached');
+          this.cleanupBot(userId);
           this.io.to(`user-${userId}`).emit('bot-error', { 
             userId, 
             error: 'Connection failed after multiple attempts. Please try again.',
@@ -306,7 +379,7 @@ export class BotManager extends EventEmitter {
       this.reconnectAttempts.set(userId, 0);
       this.logBotEvent(userId, 'Bot connected successfully');
       
-      // Clear retry counts
+      // Clear retry counts and codes
       this.qrRetryCount.delete(userId);
       this.pairingCodes.delete(userId);
       
@@ -463,6 +536,12 @@ export class BotManager extends EventEmitter {
   }
 
   cleanupBot(userId) {
+    // Clear connection timeout
+    if (this.connectionTimeouts.has(userId)) {
+      clearTimeout(this.connectionTimeouts.get(userId));
+      this.connectionTimeouts.delete(userId);
+    }
+    
     this.bots.delete(userId);
     this.stores.delete(userId);
     this.qrRetryCount.delete(userId);
