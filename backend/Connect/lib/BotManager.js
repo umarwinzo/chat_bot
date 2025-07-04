@@ -159,7 +159,8 @@ export class BotManager extends EventEmitter {
       // Add error handling
       sock.ev.on('connection.update', (update) => {
         if (update.lastDisconnect?.error) {
-          const statusCode = (update.lastDisconnect.error as Boom)?.output?.statusCode;
+          const statusCode = update.lastDisconnect.error?.output?.statusCode;
+
           this.logBotEvent(userId, `Connection error: ${statusCode} - ${update.lastDisconnect.error.message}`);
         }
       });
@@ -268,8 +269,8 @@ export class BotManager extends EventEmitter {
 
     if (connection === 'close') {
       this.connectionStates.set(userId, 'disconnected');
-      const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-      
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+
       if (shouldReconnect) {
         const attempts = this.reconnectAttempts.get(userId) || 0;
         
