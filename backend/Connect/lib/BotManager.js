@@ -45,6 +45,8 @@ export class BotManager extends EventEmitter {
     this.qrRetryCount = new Map();
     this.pairingCodes = new Map();
     this.botLogs = new Map();
+    this.connectionStates = new Map();
+    this.reconnectAttempts = new Map();
     
     // Ensure auth directory exists
     this.authDir = path.join(__dirname, '../auth');
@@ -56,12 +58,16 @@ export class BotManager extends EventEmitter {
 
   async connectBot(userId, method = 'qr', phoneNumber = null) {
     try {
+      // Clean up existing connection if any
       if (this.bots.has(userId)) {
-        this.logBotEvent(userId, 'Bot already connected for this user');
-        return;
+        this.logBotEvent(userId, 'Cleaning up existing connection...');
+        await this.cleanupBot(userId);
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
       this.logBotEvent(userId, `Starting bot connection via ${method}`);
+      this.connectionStates.set(userId, 'connecting');
+      this.reconnectAttempts.set(userId, 0);
 
       const authPath = path.join(this.authDir, userId);
       fs.ensureDirSync(authPath);
@@ -79,7 +85,7 @@ export class BotManager extends EventEmitter {
       });
       this.stores.set(userId, store);
 
-      // Socket configuration
+      // Socket configuration with improved settings
       const socketConfig = {
         version,
         logger: pino({ level: 'silent' }),
@@ -92,6 +98,11 @@ export class BotManager extends EventEmitter {
         generateHighQualityLinkPreview: true,
         syncFullHistory: false,
         markOnlineOnConnect: true,
+        defaultQueryTimeoutMs: 60000,
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
+        retryRequestDelayMs: 250,
+        maxMsgRetryCount: 5,
         getMessage: async (key) => {
           if (store) {
             const msg = await store.loadMessage(key.remoteJid, key.id);
@@ -145,11 +156,20 @@ export class BotManager extends EventEmitter {
         await this.handleGroupsUpsert(userId, groups);
       });
 
+      // Add error handling
+      sock.ev.on('connection.update', (update) => {
+        if (update.lastDisconnect?.error) {
+          const statusCode = (update.lastDisconnect.error as Boom)?.output?.statusCode;
+          this.logBotEvent(userId, `Connection error: ${statusCode} - ${update.lastDisconnect.error.message}`);
+        }
+      });
+
       this.logBotEvent(userId, `Bot connection initiated via ${method}`);
 
     } catch (error) {
       console.error(`Error connecting bot for user ${userId}:`, error);
       this.logBotEvent(userId, `Connection error: ${error.message}`);
+      this.connectionStates.set(userId, 'error');
       this.io.to(`user-${userId}`).emit('bot-error', { 
         userId, 
         error: error.message,
@@ -162,16 +182,19 @@ export class BotManager extends EventEmitter {
   async handleConnectionUpdate(userId, update, method = 'qr', phoneNumber = null) {
     const { connection, lastDisconnect, qr, isNewLogin } = update;
 
+    this.logBotEvent(userId, `Connection update: ${connection || 'unknown'}`);
+
     // Handle QR code generation
     if (qr && method === 'qr') {
       try {
         const qrCodeDataURL = await QRCode.toDataURL(qr, {
-          width: 300,
+          width: 512,
           margin: 2,
           color: {
             dark: '#000000',
             light: '#FFFFFF'
-          }
+          },
+          errorCorrectionLevel: 'H'
         });
         
         this.io.to(`user-${userId}`).emit('qr-code', {
@@ -186,13 +209,13 @@ export class BotManager extends EventEmitter {
         const retryCount = this.qrRetryCount.get(userId) || 0;
         this.qrRetryCount.set(userId, retryCount + 1);
         
-        // Auto-refresh QR after 20 seconds
+        // Auto-refresh QR after 45 seconds
         setTimeout(() => {
-          if (!this.isBotConnected(userId) && this.qrRetryCount.get(userId) < 5) {
+          if (!this.isBotConnected(userId) && this.qrRetryCount.get(userId) < 3) {
             this.logBotEvent(userId, 'QR code expired, generating new one...');
             this.io.to(`user-${userId}`).emit('qr-expired', { userId });
           }
-        }, 20000);
+        }, 45000);
         
       } catch (error) {
         console.error('QR code generation error:', error);
@@ -210,13 +233,23 @@ export class BotManager extends EventEmitter {
       try {
         const sock = this.bots.get(userId);
         if (sock && !sock.authState?.creds?.registered) {
-          const code = await sock.requestPairingCode(phoneNumber);
+          // Clean phone number format - remove all non-digits
+          const cleanPhoneNumber = phoneNumber.replace(/[^\d]/g, '');
+          
+          // Validate phone number
+          if (cleanPhoneNumber.length < 10 || cleanPhoneNumber.length > 15) {
+            throw new Error('Invalid phone number format. Please include country code.');
+          }
+          
+          this.logBotEvent(userId, `Requesting pairing code for: +${cleanPhoneNumber}`);
+          
+          const code = await sock.requestPairingCode(cleanPhoneNumber);
           this.pairingCodes.set(userId, code);
           
           this.io.to(`user-${userId}`).emit('pairing-code', {
             userId,
             code,
-            phoneNumber,
+            phoneNumber: cleanPhoneNumber,
             method: 'pairing'
           });
           
@@ -227,23 +260,38 @@ export class BotManager extends EventEmitter {
         this.logBotEvent(userId, `Pairing code error: ${error.message}`);
         this.io.to(`user-${userId}`).emit('bot-error', { 
           userId, 
-          error: 'Failed to generate pairing code',
+          error: error.message || 'Failed to generate pairing code. Please check your phone number format.',
           type: 'pairing'
         });
       }
     }
 
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      this.connectionStates.set(userId, 'disconnected');
+      const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
       
       if (shouldReconnect) {
-        this.logBotEvent(userId, 'Connection lost, attempting to reconnect...');
+        const attempts = this.reconnectAttempts.get(userId) || 0;
         
-        this.io.to(`user-${userId}`).emit('bot-reconnecting', { userId });
-        
-        setTimeout(() => {
-          this.connectBot(userId, method, phoneNumber);
-        }, 3000);
+        if (attempts < 3) {
+          this.reconnectAttempts.set(userId, attempts + 1);
+          this.logBotEvent(userId, `Connection lost, attempting to reconnect (${attempts + 1}/3)...`);
+          
+          this.io.to(`user-${userId}`).emit('bot-reconnecting', { userId, attempt: attempts + 1 });
+          
+          // Exponential backoff
+          const delay = Math.min(5000 * Math.pow(2, attempts), 30000);
+          setTimeout(() => {
+            this.connectBot(userId, method, phoneNumber);
+          }, delay);
+        } else {
+          this.logBotEvent(userId, 'Max reconnection attempts reached');
+          this.io.to(`user-${userId}`).emit('bot-error', { 
+            userId, 
+            error: 'Connection failed after multiple attempts. Please try again.',
+            type: 'reconnect'
+          });
+        }
       } else {
         this.logBotEvent(userId, 'Bot logged out');
         this.cleanupBot(userId);
@@ -253,6 +301,8 @@ export class BotManager extends EventEmitter {
 
       this.io.to(`user-${userId}`).emit('bot-disconnected', { userId });
     } else if (connection === 'open') {
+      this.connectionStates.set(userId, 'connected');
+      this.reconnectAttempts.set(userId, 0);
       this.logBotEvent(userId, 'Bot connected successfully');
       
       // Clear retry counts
@@ -267,7 +317,8 @@ export class BotManager extends EventEmitter {
       const botInfo = {
         jid: sock.user.id,
         name: sock.user.name || 'WhatsApp Bot',
-        pushName: sock.user.pushName || 'Bot'
+        pushName: sock.user.pushName || 'Bot',
+        profilePicture: null
       };
       
       this.io.to(`user-${userId}`).emit('bot-connected', { 
@@ -288,6 +339,7 @@ export class BotManager extends EventEmitter {
         this.logBotEvent(userId, `Could not send welcome message: ${error.message}`);
       }
     } else if (connection === 'connecting') {
+      this.connectionStates.set(userId, 'connecting');
       this.logBotEvent(userId, 'Connecting to WhatsApp...');
       this.io.to(`user-${userId}`).emit('bot-connecting', { userId });
     }
@@ -414,6 +466,8 @@ export class BotManager extends EventEmitter {
     this.stores.delete(userId);
     this.qrRetryCount.delete(userId);
     this.pairingCodes.delete(userId);
+    this.connectionStates.delete(userId);
+    this.reconnectAttempts.delete(userId);
   }
 
   async disconnectAllBots() {
@@ -423,7 +477,7 @@ export class BotManager extends EventEmitter {
 
   isBotConnected(userId) {
     const bot = this.bots.get(userId);
-    return bot && bot.user;
+    return bot && bot.user && this.connectionStates.get(userId) === 'connected';
   }
 
   getConnectedBotsCount() {
@@ -448,6 +502,7 @@ export class BotManager extends EventEmitter {
     return {
       connected,
       botInfo,
+      connectionState: this.connectionStates.get(userId) || 'disconnected',
       stats: {
         uptime: connected ? Math.floor((Date.now() - (stats.lastConnected || Date.now())) / 1000) : 0,
         totalUsers: stats.totalUsers || 0,
@@ -511,8 +566,8 @@ export class BotManager extends EventEmitter {
     const logs = this.botLogs.get(userId);
     logs.push(logEntry);
     
-    // Keep only last 500 logs
-    if (logs.length > 500) {
+    // Keep only last 1000 logs
+    if (logs.length > 1000) {
       logs.shift();
     }
     
@@ -538,7 +593,7 @@ export class BotManager extends EventEmitter {
         await this.disconnectBot(userId);
         setTimeout(() => {
           this.connectBot(userId, 'qr');
-        }, 1000);
+        }, 3000);
         
         this.logBotEvent(userId, 'QR code refresh requested');
         return true;

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Terminal from './Terminal';
+import DeveloperPage from './DeveloperPage';
 import { 
   Bot, 
   LogOut, 
@@ -40,11 +41,19 @@ import {
   Calendar,
   Phone,
   Eye,
-  EyeOff
+  EyeOff,
+  Loader,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Sparkles,
+  Waves,
+  Signal
 } from 'lucide-react';
 
 interface BotStatus {
   connected: boolean;
+  connectionState: string;
   botInfo?: {
     jid: string;
     name: string;
@@ -108,6 +117,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('connect');
   const [botStatus, setBotStatus] = useState<BotStatus>({
     connected: false,
+    connectionState: 'disconnected',
     stats: {
       uptime: 0,
       totalUsers: 0,
@@ -127,6 +137,7 @@ export default function Dashboard() {
   const [socket, setSocket] = useState<any>(null);
   const [showPhoneNumber, setShowPhoneNumber] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -146,7 +157,10 @@ export default function Dashboard() {
       if (data.userId === user?.id) {
         setQrCode(data.qrCode);
         setLoading(false);
-        toast.success('QR Code generated! Scan with WhatsApp');
+        toast.success('QR Code generated! Scan with WhatsApp', {
+          icon: '📱',
+          duration: 5000
+        });
       }
     });
 
@@ -154,7 +168,25 @@ export default function Dashboard() {
       if (data.userId === user?.id) {
         setPairingCode(data.code);
         setLoading(false);
-        toast.success('Pairing code generated!');
+        toast.success('Pairing code generated!', {
+          icon: '🔢',
+          duration: 5000
+        });
+      }
+    });
+
+    newSocket.on('bot-connecting', (data) => {
+      if (data.userId === user?.id) {
+        setBotStatus(prev => ({ ...prev, connectionState: 'connecting' }));
+        toast.loading('Connecting to WhatsApp...', { id: 'connecting' });
+      }
+    });
+
+    newSocket.on('bot-reconnecting', (data) => {
+      if (data.userId === user?.id) {
+        setReconnectAttempt(data.attempt || 1);
+        setBotStatus(prev => ({ ...prev, connectionState: 'reconnecting' }));
+        toast.loading(`Reconnecting... (${data.attempt}/3)`, { id: 'reconnecting' });
       }
     });
 
@@ -163,35 +195,64 @@ export default function Dashboard() {
         setBotStatus(prev => ({
           ...prev,
           connected: true,
+          connectionState: 'connected',
           botInfo: data.botInfo
         }));
         setQrCode(null);
         setPairingCode(null);
         setLoading(false);
-        toast.success('🎉 Bot connected successfully!');
+        setReconnectAttempt(0);
+        toast.dismiss();
+        toast.success('🎉 Bot connected successfully!', {
+          duration: 6000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
       }
     });
 
     newSocket.on('bot-disconnected', (data) => {
       if (data.userId === user?.id) {
-        setBotStatus(prev => ({ ...prev, connected: false, botInfo: undefined }));
+        setBotStatus(prev => ({ 
+          ...prev, 
+          connected: false, 
+          connectionState: 'disconnected',
+          botInfo: undefined 
+        }));
         setQrCode(null);
         setPairingCode(null);
         setLoading(false);
-        toast.error('Bot disconnected');
+        toast.dismiss();
+        toast.error('Bot disconnected', { icon: '🔌' });
       }
     });
 
     newSocket.on('bot-error', (data) => {
       if (data.userId === user?.id) {
         setLoading(false);
-        toast.error(data.error);
+        toast.dismiss();
+        toast.error(data.error, {
+          duration: 6000,
+          style: {
+            background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+            color: 'white'
+          }
+        });
+      }
+    });
+
+    newSocket.on('qr-expired', (data) => {
+      if (data.userId === user?.id) {
+        setQrCode(null);
+        toast('QR code expired. Generating new one...', { icon: '🔄' });
       }
     });
 
     newSocket.on('settings-updated', (data) => {
       if (data.userId === user?.id) {
-        toast.success('Settings updated successfully!');
+        toast.success('Settings updated successfully!', { icon: '⚙️' });
       }
     });
 
@@ -235,8 +296,16 @@ export default function Dashboard() {
     }
 
     if (connectionMethod === 'pairing' && !phoneNumber) {
-      toast.error('Please enter your phone number');
+      toast.error('Please enter your phone number with country code');
       return;
+    }
+
+    if (connectionMethod === 'pairing') {
+      const cleanNumber = phoneNumber.replace(/[^\d]/g, '');
+      if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+        toast.error('Please enter a valid phone number with country code');
+        return;
+      }
     }
 
     setLoading(true);
@@ -257,7 +326,7 @@ export default function Dashboard() {
       });
 
       if (response.ok) {
-        toast.success(`Connecting via ${connectionMethod}...`);
+        toast.success(`Connecting via ${connectionMethod}...`, { icon: '🚀' });
       } else {
         const error = await response.json();
         toast.error(error.error);
@@ -349,6 +418,36 @@ export default function Dashboard() {
     return `${minutes}m`;
   };
 
+  const getConnectionStatusColor = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return 'text-green-400';
+      case 'connecting': 
+      case 'reconnecting': return 'text-yellow-400';
+      case 'error': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  };
+
+  const getConnectionStatusIcon = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return <Wifi className="w-4 h-4" />;
+      case 'connecting': 
+      case 'reconnecting': return <Loader className="w-4 h-4 animate-spin" />;
+      case 'error': return <AlertCircle className="w-4 h-4" />;
+      default: return <WifiOff className="w-4 h-4" />;
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return 'Connected';
+      case 'connecting': return 'Connecting...';
+      case 'reconnecting': return `Reconnecting... (${reconnectAttempt}/3)`;
+      case 'error': return 'Error';
+      default: return 'Disconnected';
+    }
+  };
+
   const tabs = [
     { id: 'connect', label: 'Connect Bot', icon: Bot },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -376,12 +475,12 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className={`flex items-center space-x-2 px-4 py-2 rounded-full ${
-                botStatus.connected ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
-              }`}>
-                {botStatus.connected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
-                <span className="text-sm font-medium">
-                  {botStatus.connected ? 'Connected' : 'Disconnected'}
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/20`}>
+                <div className={getConnectionStatusColor()}>
+                  {getConnectionStatusIcon()}
+                </div>
+                <span className={`text-sm font-medium ${getConnectionStatusColor()}`}>
+                  {getConnectionStatusText()}
                 </span>
               </div>
               <motion.button
@@ -459,104 +558,145 @@ export default function Dashboard() {
               className="space-y-6"
             >
               {/* Connection Method Selection */}
-              <div className="glass-effect rounded-2xl p-6">
-                <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
-                  <Bot className="w-6 h-6 mr-2" />
-                  Connect Your WhatsApp Bot
-                </h2>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="glass-effect rounded-2xl p-8">
+                <div className="text-center mb-8">
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className="w-24 h-24 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 relative"
+                  >
+                    <Bot className="w-12 h-12 text-white" />
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 animate-pulse opacity-50"></div>
+                  </motion.div>
+                  <h2 className="text-3xl font-bold text-white mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    Connect Your WhatsApp Bot
+                  </h2>
+                  <p className="text-white/70 text-lg">Choose your preferred connection method</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                  <motion.div
+                    whileHover={{ scale: 1.02, y: -5 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-8 rounded-2xl border-2 cursor-pointer transition-all duration-300 relative overflow-hidden ${
                       connectionMethod === 'qr'
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-white/20 bg-white/5 hover:border-white/40'
+                        ? 'border-blue-500 bg-gradient-to-br from-blue-500/20 to-purple-500/20 shadow-2xl'
+                        : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
                     }`}
                     onClick={() => setConnectionMethod('qr')}
                   >
-                    <div className="flex items-center space-x-4 mb-4">
-                      <QrCode className="w-8 h-8 text-blue-400" />
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">QR Code</h3>
-                        <p className="text-white/70 text-sm">Scan with WhatsApp</p>
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-transparent rounded-full -translate-y-16 translate-x-16"></div>
+                    <div className="relative z-10">
+                      <div className="flex items-center space-x-4 mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center">
+                          <QrCode className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-white">QR Code</h3>
+                          <p className="text-blue-300 font-medium">Scan with WhatsApp</p>
+                        </div>
+                      </div>
+                      <p className="text-white/80 leading-relaxed">
+                        Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan the QR code that appears.
+                      </p>
+                      <div className="mt-6 flex items-center space-x-2 text-green-400">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="text-sm font-medium">Recommended for most users</span>
                       </div>
                     </div>
-                    <p className="text-white/60 text-sm">
-                      Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan the QR code.
-                    </p>
                   </motion.div>
 
                   <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    className={`p-6 rounded-xl border-2 cursor-pointer transition-all ${
+                    whileHover={{ scale: 1.02, y: -5 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-8 rounded-2xl border-2 cursor-pointer transition-all duration-300 relative overflow-hidden ${
                       connectionMethod === 'pairing'
-                        ? 'border-green-500 bg-green-500/10'
-                        : 'border-white/20 bg-white/5 hover:border-white/40'
+                        ? 'border-green-500 bg-gradient-to-br from-green-500/20 to-emerald-500/20 shadow-2xl'
+                        : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
                     }`}
                     onClick={() => setConnectionMethod('pairing')}
                   >
-                    <div className="flex items-center space-x-4 mb-4">
-                      <Smartphone className="w-8 h-8 text-green-400" />
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">Phone Pairing</h3>
-                        <p className="text-white/70 text-sm">Use pairing code</p>
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/20 to-transparent rounded-full -translate-y-16 translate-x-16"></div>
+                    <div className="relative z-10">
+                      <div className="flex items-center space-x-4 mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center">
+                          <Smartphone className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-white">Phone Pairing</h3>
+                          <p className="text-green-300 font-medium">Use pairing code</p>
+                        </div>
+                      </div>
+                      <p className="text-white/80 leading-relaxed">
+                        Enter your phone number to receive a pairing code that you can enter in WhatsApp for secure connection.
+                      </p>
+                      <div className="mt-6 flex items-center space-x-2 text-blue-400">
+                        <Shield className="w-5 h-5" />
+                        <span className="text-sm font-medium">Enhanced security</span>
                       </div>
                     </div>
-                    <p className="text-white/60 text-sm">
-                      Enter your phone number to receive a pairing code that you can enter in WhatsApp.
-                    </p>
                   </motion.div>
                 </div>
 
                 {/* Phone Number Input for Pairing */}
-                {connectionMethod === 'pairing' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mb-6"
-                  >
-                    <label className="block text-white/70 text-sm font-medium mb-2">
-                      Phone Number (with country code)
-                    </label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/40" />
-                      <input
-                        type="tel"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="+1234567890"
-                        className="w-full bg-white/10 border border-white/20 rounded-xl pl-12 pr-12 py-4 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPhoneNumber(!showPhoneNumber)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/40 hover:text-white/70"
-                      >
-                        {showPhoneNumber ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
+                <AnimatePresence>
+                  {connectionMethod === 'pairing' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mb-8"
+                    >
+                      <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-2xl p-6">
+                        <label className="block text-white font-semibold text-lg mb-4">
+                          Phone Number (with country code)
+                        </label>
+                        <div className="relative">
+                          <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-green-400" />
+                          <input
+                            type="tel"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            placeholder="+1234567890"
+                            className="w-full bg-black/30 border border-white/30 rounded-xl pl-14 pr-14 py-4 text-white text-lg placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPhoneNumber(!showPhoneNumber)}
+                            className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors"
+                          >
+                            {showPhoneNumber ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                          </button>
+                        </div>
+                        <p className="text-green-300/80 text-sm mt-3">
+                          Example: +1234567890 (include country code without spaces)
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* Connection Button */}
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center justify-center space-x-4">
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={connectBot}
                     disabled={loading || botStatus.connected}
-                    className="flex items-center space-x-2 px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    className="flex items-center space-x-3 px-12 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white rounded-2xl font-bold text-lg hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-2xl"
                   >
                     {loading ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <Loader className="w-6 h-6 animate-spin" />
+                    ) : botStatus.connected ? (
+                      <CheckCircle className="w-6 h-6" />
                     ) : (
-                      <Zap className="w-5 h-5" />
+                      <Zap className="w-6 h-6" />
                     )}
                     <span>
                       {loading ? 'Connecting...' : botStatus.connected ? 'Connected' : 'Connect Bot'}
                     </span>
+                    {!loading && !botStatus.connected && <Sparkles className="w-6 h-6" />}
                   </motion.button>
 
                   {botStatus.connected && (
@@ -566,7 +706,7 @@ export default function Dashboard() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={disconnectBot}
-                      className="flex items-center space-x-2 px-6 py-4 bg-red-500/20 text-red-300 border border-red-500/30 rounded-xl font-semibold hover:bg-red-500/30 transition-all duration-200"
+                      className="flex items-center space-x-2 px-8 py-4 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-red-600 hover:to-pink-600 transition-all duration-300 shadow-xl"
                     >
                       <X className="w-5 h-5" />
                       <span>Disconnect</span>
@@ -580,87 +720,135 @@ export default function Dashboard() {
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={refreshConnection}
-                      className="p-4 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                      className="p-4 text-white/70 hover:text-white hover:bg-white/10 rounded-2xl transition-colors border border-white/20"
                       title="Refresh"
                     >
-                      <RefreshCw className="w-5 h-5" />
+                      <RefreshCw className="w-6 h-6" />
                     </motion.button>
                   )}
                 </div>
               </div>
 
               {/* QR Code Display */}
-              {qrCode && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="glass-effect rounded-2xl p-6 text-center"
-                >
-                  <h3 className="text-xl font-bold text-white mb-4">Scan QR Code</h3>
-                  <div className="bg-white p-4 rounded-xl inline-block mb-4">
-                    <img src={qrCode} alt="QR Code" className="w-64 h-64" />
-                  </div>
-                  <p className="text-white/70">
-                    Open WhatsApp → Settings → Linked Devices → Link a Device
-                  </p>
-                </motion.div>
-              )}
+              <AnimatePresence>
+                {qrCode && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="glass-effect rounded-2xl p-8 text-center"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-2xl font-bold text-white mb-2">Scan QR Code</h3>
+                      <p className="text-white/70">Use your WhatsApp mobile app to scan this code</p>
+                    </div>
+                    
+                    <div className="relative inline-block mb-6">
+                      <div className="bg-white p-6 rounded-3xl shadow-2xl">
+                        <img src={qrCode} alt="QR Code" className="w-80 h-80" />
+                      </div>
+                      <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl opacity-20 animate-pulse"></div>
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-center space-x-2 mb-3">
+                        <Smartphone className="w-5 h-5 text-blue-400" />
+                        <span className="text-white font-semibold">Instructions</span>
+                      </div>
+                      <ol className="text-white/80 text-left space-y-2">
+                        <li>1. Open WhatsApp on your phone</li>
+                        <li>2. Go to Settings → Linked Devices</li>
+                        <li>3. Tap "Link a Device"</li>
+                        <li>4. Scan this QR code</li>
+                      </ol>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Pairing Code Display */}
-              {pairingCode && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="glass-effect rounded-2xl p-6 text-center"
-                >
-                  <h3 className="text-xl font-bold text-white mb-4">Pairing Code</h3>
-                  <div className="bg-white/10 border border-white/20 rounded-xl p-6 mb-4">
-                    <div className="text-4xl font-mono font-bold text-white mb-2 tracking-wider">
-                      {pairingCode}
+              <AnimatePresence>
+                {pairingCode && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="glass-effect rounded-2xl p-8 text-center"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-2xl font-bold text-white mb-2">Pairing Code</h3>
+                      <p className="text-white/70">Enter this code in WhatsApp</p>
                     </div>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={copyPairingCode}
-                      className="flex items-center space-x-2 mx-auto px-4 py-2 bg-blue-500/20 text-blue-300 rounded-lg hover:bg-blue-500/30 transition-colors"
-                    >
-                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{copied ? 'Copied!' : 'Copy Code'}</span>
-                    </motion.button>
-                  </div>
-                  <p className="text-white/70">
-                    Open WhatsApp → Settings → Linked Devices → Link a Device → Link with phone number instead
-                  </p>
-                </motion.div>
-              )}
+                    
+                    <div className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-2xl p-8 mb-6">
+                      <div className="text-6xl font-mono font-bold text-white mb-4 tracking-wider">
+                        {pairingCode}
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={copyPairingCode}
+                        className="flex items-center space-x-2 mx-auto px-6 py-3 bg-green-500/20 text-green-300 rounded-xl hover:bg-green-500/30 transition-colors border border-green-500/30"
+                      >
+                        {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                        <span className="font-semibold">{copied ? 'Copied!' : 'Copy Code'}</span>
+                      </motion.button>
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-center space-x-2 mb-3">
+                        <Phone className="w-5 h-5 text-green-400" />
+                        <span className="text-white font-semibold">Instructions</span>
+                      </div>
+                      <ol className="text-white/80 text-left space-y-2">
+                        <li>1. Open WhatsApp on your phone</li>
+                        <li>2. Go to Settings → Linked Devices</li>
+                        <li>3. Tap "Link a Device"</li>
+                        <li>4. Select "Link with phone number instead"</li>
+                        <li>5. Enter the pairing code above</li>
+                      </ol>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Bot Info */}
-              {botStatus.connected && botStatus.botInfo && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="glass-effect rounded-2xl p-6"
-                >
-                  <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                    <Check className="w-6 h-6 text-green-400 mr-2" />
-                    Bot Connected Successfully
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-white/70 text-sm">Bot Name</p>
-                      <p className="text-white font-medium">{botStatus.botInfo.name}</p>
+              <AnimatePresence>
+                {botStatus.connected && botStatus.botInfo && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="glass-effect rounded-2xl p-8"
+                  >
+                    <div className="text-center mb-6">
+                      <div className="w-20 h-20 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle className="w-10 h-10 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-white mb-2">Bot Connected Successfully!</h3>
+                      <p className="text-green-300">Your WhatsApp bot is now active and ready to serve</p>
                     </div>
-                    <div>
-                      <p className="text-white/70 text-sm">Push Name</p>
-                      <p className="text-white font-medium">{botStatus.botInfo.pushName}</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Bot Name</p>
+                        <p className="text-white font-semibold">{botStatus.botInfo.name}</p>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Push Name</p>
+                        <p className="text-white font-semibold">{botStatus.botInfo.pushName}</p>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Status</p>
+                        <div className="flex items-center justify-center space-x-2">
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                          <p className="text-green-400 font-semibold">Online</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white/70 text-sm">JID</p>
-                      <p className="text-white font-medium font-mono text-xs">{botStatus.botInfo.jid}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
 
@@ -856,202 +1044,8 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
             >
-              {/* Developer Profile */}
-              <div className="glass-effect rounded-2xl p-8">
-                <div className="text-center mb-8">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200 }}
-                    className="w-32 h-32 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-6"
-                  >
-                    <User className="w-16 h-16 text-white" />
-                  </motion.div>
-                  <h2 className="text-3xl font-bold text-white mb-2">DarkWinzo</h2>
-                  <p className="text-white/70 text-lg">Full Stack Developer & Bot Creator</p>
-                  <div className="flex items-center justify-center space-x-2 mt-4">
-                    <div className="flex items-center space-x-1">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="w-4 h-4 text-yellow-400 fill-current" />
-                      ))}
-                    </div>
-                    <span className="text-white/70 text-sm">5.0 Rating</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div className="text-center p-4 bg-white/5 rounded-xl">
-                    <Code className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-white">50+</div>
-                    <div className="text-white/70 text-sm">Projects</div>
-                  </div>
-                  <div className="text-center p-4 bg-white/5 rounded-xl">
-                    <Users className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-white">10K+</div>
-                    <div className="text-white/70 text-sm">Users</div>
-                  </div>
-                  <div className="text-center p-4 bg-white/5 rounded-xl">
-                    <Heart className="w-8 h-8 text-red-400 mx-auto mb-2" />
-                    <div className="text-2xl font-bold text-white">99%</div>
-                    <div className="text-white/70 text-sm">Satisfaction</div>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                  <p className="text-white/80 text-lg leading-relaxed mb-6">
-                    Passionate developer specializing in WhatsApp automation, web development, and AI integration. 
-                    Creating innovative solutions that bridge the gap between technology and user experience.
-                  </p>
-                  
-                  <div className="flex items-center justify-center space-x-4">
-                    <motion.a
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      href="mailto:isurulakshan9998@gmail.com"
-                      className="flex items-center space-x-2 px-6 py-3 bg-blue-500/20 text-blue-300 rounded-xl hover:bg-blue-500/30 transition-colors"
-                    >
-                      <Mail className="w-5 h-5" />
-                      <span>Contact</span>
-                    </motion.a>
-                    
-                    <motion.a
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      href="https://github.com/DarkWinzo"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center space-x-2 px-6 py-3 bg-gray-500/20 text-gray-300 rounded-xl hover:bg-gray-500/30 transition-colors"
-                    >
-                      <Github className="w-5 h-5" />
-                      <span>GitHub</span>
-                    </motion.a>
-                    
-                    <motion.a
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      href="https://darkwinzo.dev"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center space-x-2 px-6 py-3 bg-purple-500/20 text-purple-300 rounded-xl hover:bg-purple-500/30 transition-colors"
-                    >
-                      <ExternalLink className="w-5 h-5" />
-                      <span>Portfolio</span>
-                    </motion.a>
-                  </div>
-                </div>
-              </div>
-
-              {/* Technology Stack */}
-              <div className="glass-effect rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                  <Code className="w-6 h-6 mr-2" />
-                  Technology Stack
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[
-                    { name: 'Node.js', level: 95, color: 'green' },
-                    { name: 'React', level: 90, color: 'blue' },
-                    { name: 'TypeScript', level: 85, color: 'blue' },
-                    { name: 'Express.js', level: 92, color: 'gray' },
-                    { name: 'Socket.IO', level: 88, color: 'purple' },
-                    { name: 'Baileys', level: 96, color: 'green' }
-                  ].map((tech, index) => (
-                    <motion.div
-                      key={tech.name}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="space-y-2"
-                    >
-                      <div className="flex justify-between">
-                        <span className="text-white font-medium">{tech.name}</span>
-                        <span className="text-white/70">{tech.level}%</span>
-                      </div>
-                      <div className="w-full bg-white/20 rounded-full h-2">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${tech.level}%` }}
-                          transition={{ duration: 1, delay: index * 0.1 }}
-                          className={`h-2 rounded-full bg-${tech.color}-500`}
-                        ></motion.div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Project Features */}
-              <div className="glass-effect rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-white mb-6 flex items-center">
-                  <Zap className="w-6 h-6 mr-2" />
-                  Platform Features
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[
-                    { icon: Shield, title: 'Enterprise Security', description: 'JWT, rate limiting, encryption' },
-                    { icon: Globe, title: 'Multi-User Support', description: 'Isolated bot instances' },
-                    { icon: Database, title: 'Real-Time Sync', description: 'Live updates and monitoring' },
-                    { icon: Server, title: 'Scalable Architecture', description: 'Built for performance' },
-                    { icon: Monitor, title: 'Advanced Dashboard', description: 'Beautiful, responsive UI' },
-                    { icon: Cpu, title: 'AI Integration', description: 'Smart automation features' }
-                  ].map((feature, index) => (
-                    <motion.div
-                      key={feature.title}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="p-4 bg-white/5 rounded-xl"
-                    >
-                      <feature.icon className="w-8 h-8 text-blue-400 mb-3" />
-                      <h4 className="text-white font-semibold mb-2">{feature.title}</h4>
-                      <p className="text-white/70 text-sm">{feature.description}</p>
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Support & Documentation */}
-              <div className="glass-effect rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-white mb-6">Support & Resources</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <h4 className="text-lg font-semibold text-white">Get Help</h4>
-                    <div className="space-y-2">
-                      <a href="mailto:isurulakshan9998@gmail.com" className="flex items-center space-x-2 text-blue-400 hover:text-blue-300 transition-colors">
-                        <Mail className="w-4 h-4" />
-                        <span>Email Support</span>
-                      </a>
-                      <a href="https://github.com/DarkWinzo" className="flex items-center space-x-2 text-blue-400 hover:text-blue-300 transition-colors">
-                        <Github className="w-4 h-4" />
-                        <span>GitHub Issues</span>
-                      </a>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <h4 className="text-lg font-semibold text-white">Quick Stats</h4>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-white/70">Version</span>
-                        <span className="text-white">3.0.0</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-white/70">Last Updated</span>
-                        <span className="text-white">Dec 2024</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-white/70">License</span>
-                        <span className="text-white">MIT</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <DeveloperPage />
             </motion.div>
           )}
         </AnimatePresence>
