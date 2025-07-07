@@ -8,19 +8,41 @@ export class MessageHandler {
 
   async processMessage(userId, message, sock) {
     try {
+      console.log(`📨 Processing message from ${message.key.remoteJid}`);
+      
+      // Skip if message is from bot itself
+      if (message.key.fromMe) {
+        console.log('⏭️ Skipping message from bot itself');
+        return;
+      }
+
       // Auto-read messages
       if (message.key.remoteJid && !message.key.fromMe) {
-        await sock.readMessages([message.key]);
+        try {
+          await sock.readMessages([message.key]);
+          console.log('✅ Message marked as read');
+        } catch (error) {
+          console.log('❌ Failed to mark message as read:', error.message);
+        }
       }
 
       // Auto-typing
-      await sock.sendPresenceUpdate('composing', message.key.remoteJid);
-      setTimeout(async () => {
-        await sock.sendPresenceUpdate('paused', message.key.remoteJid);
-      }, 1000);
+      try {
+        await sock.sendPresenceUpdate('composing', message.key.remoteJid);
+        setTimeout(async () => {
+          try {
+            await sock.sendPresenceUpdate('paused', message.key.remoteJid);
+          } catch (error) {
+            console.log('❌ Failed to update presence to paused:', error.message);
+          }
+        }, 1000);
+      } catch (error) {
+        console.log('❌ Failed to update presence:', error.message);
+      }
 
       // Process different message types
       const messageType = getContentType(message.message);
+      console.log(`📝 Message type: ${messageType}`);
       
       switch (messageType) {
         case 'conversation':
@@ -43,25 +65,25 @@ export class MessageHandler {
           await this.handleStickerMessage(userId, message, sock);
           break;
         default:
-          console.log(`Unhandled message type: ${messageType}`);
+          console.log(`❓ Unhandled message type: ${messageType}`);
       }
 
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('❌ Error processing message:', error);
     }
   }
 
   async handleTextMessage(userId, message, sock) {
     const text = message.message.conversation || message.message.extendedTextMessage?.text;
+    console.log(`💬 Text message: "${text}"`);
     
     // Anti-link filter
     if (this.containsLink(text)) {
-      // Handle link detection
-      console.log('Link detected in message');
+      console.log('🔗 Link detected in message');
     }
 
-    // Auto-reply for greetings
-    if (this.isGreeting(text)) {
+    // Auto-reply for greetings (only if not a command)
+    if (this.isGreeting(text) && !text.startsWith('.')) {
       const greetings = [
         "👋 Hello! How can I help you today?",
         "🤖 Hi there! I'm your bot assistant.",
@@ -73,75 +95,105 @@ export class MessageHandler {
       const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];
       
       setTimeout(async () => {
-        await sock.sendMessage(message.key.remoteJid, {
-          text: randomGreeting
-        });
+        try {
+          await sock.sendMessage(message.key.remoteJid, {
+            text: randomGreeting
+          });
+          console.log('✅ Greeting response sent');
+        } catch (error) {
+          console.log('❌ Failed to send greeting:', error.message);
+        }
       }, 1000);
     }
   }
 
   async handleImageMessage(userId, message, sock) {
     const imageMessage = message.message.imageMessage;
-    console.log('Image message received:', imageMessage.caption || 'No caption');
+    console.log('📸 Image message received:', imageMessage.caption || 'No caption');
     
     // Auto-react to images
-    await sock.sendMessage(message.key.remoteJid, {
-      react: {
-        text: '📸',
-        key: message.key
-      }
-    });
+    try {
+      await sock.sendMessage(message.key.remoteJid, {
+        react: {
+          text: '📸',
+          key: message.key
+        }
+      });
+      console.log('✅ Image reaction sent');
+    } catch (error) {
+      console.log('❌ Failed to react to image:', error.message);
+    }
   }
 
   async handleVideoMessage(userId, message, sock) {
     const videoMessage = message.message.videoMessage;
-    console.log('Video message received:', videoMessage.caption || 'No caption');
+    console.log('🎥 Video message received:', videoMessage.caption || 'No caption');
     
     // Auto-react to videos
-    await sock.sendMessage(message.key.remoteJid, {
-      react: {
-        text: '🎥',
-        key: message.key
-      }
-    });
+    try {
+      await sock.sendMessage(message.key.remoteJid, {
+        react: {
+          text: '🎥',
+          key: message.key
+        }
+      });
+      console.log('✅ Video reaction sent');
+    } catch (error) {
+      console.log('❌ Failed to react to video:', error.message);
+    }
   }
 
   async handleAudioMessage(userId, message, sock) {
     const audioMessage = message.message.audioMessage;
-    console.log('Audio message received');
+    console.log('🎵 Audio message received');
     
     // Auto-react to audio
-    await sock.sendMessage(message.key.remoteJid, {
-      react: {
-        text: '🎵',
-        key: message.key
-      }
-    });
+    try {
+      await sock.sendMessage(message.key.remoteJid, {
+        react: {
+          text: '🎵',
+          key: message.key
+        }
+      });
+      console.log('✅ Audio reaction sent');
+    } catch (error) {
+      console.log('❌ Failed to react to audio:', error.message);
+    }
   }
 
   async handleDocumentMessage(userId, message, sock) {
     const documentMessage = message.message.documentMessage;
-    console.log('Document received:', documentMessage.fileName);
+    console.log('📄 Document received:', documentMessage.fileName);
     
     // Auto-react to documents
-    await sock.sendMessage(message.key.remoteJid, {
-      react: {
-        text: '📄',
-        key: message.key
-      }
-    });
+    try {
+      await sock.sendMessage(message.key.remoteJid, {
+        react: {
+          text: '📄',
+          key: message.key
+        }
+      });
+      console.log('✅ Document reaction sent');
+    } catch (error) {
+      console.log('❌ Failed to react to document:', error.message);
+    }
   }
 
   async handleStickerMessage(userId, message, sock) {
-    console.log('Sticker message received');
+    console.log('😄 Sticker message received');
     
     // Auto-react to stickers
-    await sock.sendMessage(message.key.remoteJid, {
-      react: {
-        text: '😄',
-        key: message.key
-      }
-    });
+    try {
+      await sock.sendMessage(message.key.remoteJid, {
+        react: {
+          text: '😄',
+          key: message.key
+        }
+      });
+      console.log('✅ Sticker reaction sent');
+    } catch (error) {
+      console.log('❌ Failed to react to sticker:', error.message);
+    }
   }
 
   containsLink(text) {
@@ -167,7 +219,7 @@ export class MessageHandler {
       
       return buffer;
     } catch (error) {
-      console.error('Error downloading media:', error);
+      console.error('❌ Error downloading media:', error);
       throw error;
     }
   }

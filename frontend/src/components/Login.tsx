@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Bot, 
-  Mail, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  LogIn, 
-  Sparkles, 
+import {
+  Bot,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  LogIn,
+  Sparkles,
   Shield,
   Zap,
   Users,
@@ -59,14 +59,14 @@ export default function Login() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
       await login(email, password);
     } catch (err) {
-      // Error is handled by toast in AuthContext
+      // Error handled by toast in AuthContext
     } finally {
       setLoading(false);
     }
@@ -76,9 +76,9 @@ export default function Login() {
     <div className="min-h-screen flex">
       {/* Left Side - Features Showcase */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 relative overflow-hidden">
-        <div className="absolute inset-0 bg-black/20"></div>
-        
-        {/* Animated Background Elements */}
+        <div className="absolute inset-0 bg-black/20" />
+
+        {/* Animated Background */}
         <div className="absolute inset-0">
           {[...Array(20)].map((_, i) => (
             <motion.div
@@ -87,7 +87,7 @@ export default function Login() {
               animate={{
                 x: [0, Math.random() * 100, 0],
                 y: [0, Math.random() * 100, 0],
-                opacity: [0.1, 0.5, 0.1]
+                opacity: [0.1, 0.5, 0.1],
               }}
               transition={{
                 duration: Math.random() * 10 + 10,
@@ -102,6 +102,7 @@ export default function Login() {
           ))}
         </div>
 
+        {/* Features Content */}
         <div className="relative z-10 flex flex-col justify-center p-12 text-white">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -130,7 +131,9 @@ export default function Login() {
                 className="flex items-start space-x-4"
               >
                 <div className="bg-white/10 backdrop-blur-sm p-3 rounded-xl">
-                  {React.createElement(features[currentFeature].icon, { className: "w-8 h-8 text-blue-300" })}
+                  {React.createElement(features[currentFeature].icon, {
+                    className: "w-8 h-8 text-blue-300",
+                  })}
                 </div>
                 <div>
                   <h3 className="text-xl font-semibold mb-2">{features[currentFeature].title}</h3>
@@ -139,40 +142,42 @@ export default function Login() {
               </motion.div>
             </AnimatePresence>
 
-            {/* Feature Indicators */}
+            {/* Indicators */}
             <div className="flex space-x-2">
               {features.map((_, index) => (
                 <motion.div
                   key={index}
                   className={`h-1 rounded-full transition-all duration-300 ${
-                    index === currentFeature ? 'w-8 bg-blue-400' : 'w-2 bg-white/30'
+                    index === currentFeature ? "w-8 bg-blue-400" : "w-2 bg-white/30"
                   }`}
                 />
               ))}
             </div>
-          </div>
 
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1, duration: 0.8 }}
-            className="mt-12 grid grid-cols-3 gap-6"
-          >
-            {[
-              { icon: Users, value: "10K+", label: "Active Users" },
-              { icon: MessageSquare, value: "1M+", label: "Messages Sent" },
-              { icon: Star, value: "4.9", label: "User Rating" }
-            ].map((stat, index) => (
-              <div key={index} className="text-center">
-                {React.createElement(stat.icon, { className: "w-6 h-6 text-blue-300 mx-auto mb-2" })}
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <div className="text-sm text-blue-200">{stat.label}</div>
-              </div>
-            ))}
-          </motion.div>
+            {/* Stats */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1, duration: 0.8 }}
+              className="mt-12 grid grid-cols-3 gap-6"
+            >
+              {[
+                { icon: Users, value: "10K+", label: "Active Users" },
+                { icon: MessageSquare, value: "1M+", label: "Messages Sent" },
+                { icon: Star, value: "4.9", label: "User Rating" },
+              ].map((stat, index) => (
+                <div key={index} className="text-center">
+                  {React.createElement(stat.icon, {
+                    className: "w-6 h-6 text-blue-300 mx-auto mb-2",
+                  })}
+                  <div className="text-2xl font-bold">{stat.value}</div>
+                  <div className="text-sm text-blue-200">{stat.label}</div>
+                </div>
+              ))}
+            </motion.div>
+          </div>
         </div>
-      </div>
+      </div> {/* ✅ Corrected: closing left side */}
 
       {/* Right Side - Login Form */}
       <div className="flex-1 flex items-center justify-center p-6 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
@@ -211,7 +216,7 @@ export default function Login() {
               </motion.p>
             </div>
 
-            {/* Login Form */}
+            {/* Form */}
             <motion.form
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -219,6 +224,7 @@ export default function Login() {
               onSubmit={handleSubmit}
               className="space-y-6"
             >
+              {/* Email */}
               <div>
                 <label htmlFor="email" className="block text-gray-700 dark:text-gray-300 text-sm font-medium mb-2">
                   Email Address
@@ -237,6 +243,7 @@ export default function Login() {
                 </div>
               </div>
 
+              {/* Password */}
               <div>
                 <label htmlFor="password" className="block text-gray-700 dark:text-gray-300 text-sm font-medium mb-2">
                   Password
@@ -262,6 +269,7 @@ export default function Login() {
                 </div>
               </div>
 
+              {/* Button */}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -319,7 +327,7 @@ export default function Login() {
               </p>
             </motion.div>
 
-            {/* Security Badge */}
+            {/* Security */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

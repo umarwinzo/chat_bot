@@ -31,6 +31,8 @@ export function useAuth() {
 
 // Configure axios defaults
 axios.defaults.baseURL = 'http://localhost:3001';
+
+// Add request interceptor to include auth token
 axios.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -38,6 +40,19 @@ axios.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Add response interceptor to handle auth errors
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      localStorage.clear();
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -56,10 +71,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userData = JSON.parse(storedUser);
           setUser(userData);
           setToken(storedToken);
-        }
-
-        if (storedAdmin === 'true' && storedToken) {
+          setAdmin(false);
+        } else if (storedAdmin === 'true' && storedToken) {
           setAdmin(true);
+          setUser(null);
           setToken(storedToken);
         }
       } catch (error) {
@@ -84,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('token', adminToken);
         localStorage.setItem('admin', 'true');
         localStorage.removeItem('user');
-        toast.success('Welcome back, Admin!');
+        toast.success('Welcome back, Admin! 👑');
         return;
       }
 
@@ -98,9 +113,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('user', JSON.stringify(response.data.user));
       localStorage.removeItem('admin');
       
-      toast.success(`Welcome back, ${response.data.user.username}!`);
+      toast.success(`Welcome back, ${response.data.user.username}! 🎉`);
     } catch (error: any) {
-      const message = error.response?.data?.error || 'Login failed';
+      const message = error.response?.data?.error || 'Login failed. Please try again.';
       toast.error(message);
       throw new Error(message);
     }
@@ -118,9 +133,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('user', JSON.stringify(response.data.user));
       localStorage.removeItem('admin');
       
-      toast.success(`Welcome to WhatsApp Bot Platform, ${username}!`);
+      toast.success(`Welcome to WhatsApp Bot Platform, ${username}! 🚀`);
     } catch (error: any) {
-      const message = error.response?.data?.error || 'Registration failed';
+      const message = error.response?.data?.error || 'Registration failed. Please try again.';
       toast.error(message);
       throw new Error(message);
     }
@@ -131,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAdmin(false);
     setToken(null);
     localStorage.clear();
-    toast.success('Logged out successfully');
+    toast.success('Logged out successfully! 👋');
   };
 
   return (

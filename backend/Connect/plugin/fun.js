@@ -19,11 +19,15 @@ Queen.addCommand({
     "Why don't skeletons fight each other? They don't have the guts! 💀",
     "What do you call a bear with no teeth? A gummy bear! 🐻",
     "Why don't programmers like nature? It has too many bugs! 🐛",
-    "What's the best thing about Switzerland? I don't know, but the flag is a big plus! 🇨🇭"
+    "What's the best thing about Switzerland? I don't know, but the flag is a big plus! 🇨🇭",
+    "Why did the coffee file a police report? It got mugged! ☕",
+    "What do you call a dinosaur that crashes his car? Tyrannosaurus Wrecks! 🦕"
   ];
   
   const randomJoke = jokes[Math.floor(Math.random() * jokes.length)];
-  await sock.sendMessage(message.key.remoteJid, { text: `😂 *Random Joke*\n\n${randomJoke}` });
+  await sock.sendMessage(message.key.remoteJid, { 
+    text: `😂 *Random Joke*\n\n${randomJoke}\n\n🎭 *Powered by Queen Bot Pro*` 
+  });
 });
 
 Queen.addCommand({
@@ -45,11 +49,15 @@ Queen.addCommand({
     "The way to get started is to quit talking and begin doing. - Walt Disney",
     "Don't be afraid to give up the good to go for the great. - John D. Rockefeller",
     "The only impossible journey is the one you never begin. - Tony Robbins",
-    "In the middle of difficulty lies opportunity. - Albert Einstein"
+    "In the middle of difficulty lies opportunity. - Albert Einstein",
+    "Believe you can and you're halfway there. - Theodore Roosevelt",
+    "The best time to plant a tree was 20 years ago. The second best time is now. - Chinese Proverb"
   ];
   
   const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-  await sock.sendMessage(message.key.remoteJid, { text: `✨ *Inspirational Quote*\n\n${randomQuote}` });
+  await sock.sendMessage(message.key.remoteJid, { 
+    text: `✨ *Inspirational Quote*\n\n${randomQuote}\n\n💫 *Motivation by Queen Bot Pro*` 
+  });
 });
 
 Queen.addCommand({
@@ -71,11 +79,15 @@ Queen.addCommand({
     "🧬 Humans share 60% of their DNA with bananas!",
     "🐙 An octopus has three hearts, nine brains, and blue blood!",
     "🌊 The Pacific Ocean is larger than all land masses combined!",
-    "⚡ Lightning strikes the Earth about 100 times per second!"
+    "⚡ Lightning strikes the Earth about 100 times per second!",
+    "🦒 A giraffe's tongue is 18-20 inches long!",
+    "🐘 Elephants are afraid of bees!"
   ];
   
   const randomFact = facts[Math.floor(Math.random() * facts.length)];
-  await sock.sendMessage(message.key.remoteJid, { text: `🤯 *Random Fact*\n\n${randomFact}` });
+  await sock.sendMessage(message.key.remoteJid, { 
+    text: `🤯 *Random Fact*\n\n${randomFact}\n\n🧠 *Knowledge by Queen Bot Pro*` 
+  });
 });
 
 Queen.addCommand({
@@ -93,7 +105,8 @@ Queen.addCommand({
     "🤪 *Tech Meme*\n\nThere are only 10 types of people in the world:\nThose who understand binary and those who don't! 💻",
     "😅 *Coffee Meme*\n\nCoffee: Because adulting is hard ☕\nAlso coffee: *Makes you more anxious about adulting* 😰",
     "🤓 *Student Meme*\n\nTeacher: The test will be easy\nThe test: If x = happiness, solve for life 📚",
-    "😴 *Monday Meme*\n\nMonday morning motivation:\n*Error 404: Motivation not found* 💤"
+    "😴 *Monday Meme*\n\nMonday morning motivation:\n*Error 404: Motivation not found* 💤",
+    "🎮 *Gamer Meme*\n\nMe: I'll play for just 30 minutes\n*6 hours later*\nMe: Just one more game... 🎯"
   ];
   
   const randomMeme = memes[Math.floor(Math.random() * memes.length)];
@@ -113,7 +126,7 @@ Queen.addCommand({
   const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
   
   await sock.sendMessage(message.key.remoteJid, { 
-    text: `🎲 *Dice Roll*\n\n${diceEmojis[diceValue - 1]} You rolled: **${diceValue}**` 
+    text: `🎲 *Dice Roll*\n\n${diceEmojis[diceValue - 1]} *You rolled:* **${diceValue}**\n\n🎯 *Lucky number by Queen Bot Pro*` 
   });
 });
 
@@ -130,7 +143,7 @@ Queen.addCommand({
   const emoji = result === 'Heads' ? '👑' : '🔄';
   
   await sock.sendMessage(message.key.remoteJid, { 
-    text: `🪙 *Coin Flip*\n\n${emoji} Result: **${result}**` 
+    text: `🪙 *Coin Flip*\n\n${emoji} *Result:* **${result}**\n\n🎲 *Random choice by Queen Bot Pro*` 
   });
 });
 

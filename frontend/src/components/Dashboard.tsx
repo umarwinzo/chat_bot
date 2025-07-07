@@ -1,67 +1,84 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { motion } from 'framer-motion';
-import io from 'socket.io-client';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import io from 'socket.io-client';
 import Terminal from './Terminal';
+import DeveloperPage from './DeveloperPage';
 import { 
   Bot, 
-  QrCode, 
+  LogOut, 
+  Settings, 
+  Activity, 
   Users, 
   MessageSquare, 
-  Activity, 
-  Settings, 
-  LogOut, 
-  Wifi, 
+  Command,
+  QrCode,
+  Smartphone,
+  Wifi,
   WifiOff,
-  Play,
-  Pause,
-  RotateCcw,
-  Monitor,
-  Cpu,
-  HardDrive,
-  TrendingUp,
-  MessageCircle,
-  Phone,
-  Mail,
-  Github,
-  ExternalLink,
+  RefreshCw,
+  Copy,
+  Check,
+  X,
   User,
+  Globe,
   Shield,
   Zap,
-  Globe,
-  Command,
   Heart,
   Star,
-  Coffee,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  XCircle,
-  Clock,
-  BarChart3,
-  Terminal as TerminalIcon,
-  Smartphone,
+  Github,
+  Mail,
+  ExternalLink,
+  Code,
   Database,
   Server,
-  Layers
+  Cpu,
+  Monitor,
+  BarChart3,
+  TrendingUp,
+  Clock,
+  Calendar,
+  Phone,
+  Eye,
+  EyeOff,
+  Loader,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Sparkles,
+  Waves,
+  Signal,
+  Download,
+  Upload,
+  Scan,
+  Key,
+  Lock,
+  Unlock,
+  Timer,
+  RotateCcw
 } from 'lucide-react';
 
-interface BotStats {
-  uptime: number;
-  totalUsers: number;
-  totalGroups: number;
-  totalCommands: number;
-  messageCount: number;
-  activeUsers: number;
-  bannedUsers: number;
-  ramUsage: number;
-  cpuUsage: number;
-  enabledCommands: number;
-  totalCommandsAvailable: number;
+interface BotStatus {
+  connected: boolean;
+  connectionState: string;
+  botInfo?: {
+    jid: string;
+    name: string;
+    pushName: string;
+  };
+  stats: {
+    uptime: number;
+    totalUsers: number;
+    totalGroups: number;
+    totalCommands: number;
+    messageCount: number;
+    ramUsage: number;
+    cpuUsage: number;
+  };
 }
 
-interface BotSettings {
+interface Settings {
   botName: string;
   prefix: string;
   language: string;
@@ -101,103 +118,47 @@ interface BotSettings {
   autoReplyText: string;
   autoReplyEnabled: boolean;
   welcomeText: string;
-  enabledCommands: Record<string, boolean>;
 }
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [botConnected, setBotConnected] = useState(false);
-  const [qrCode, setQrCode] = useState('');
-  const [showQR, setShowQR] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [socket, setSocket] = useState<any>(null);
-  const [stats, setStats] = useState<BotStats>({
-    uptime: 0,
-    totalUsers: 0,
-    totalGroups: 0,
-    totalCommands: 0,
-    messageCount: 0,
-    activeUsers: 0,
-    bannedUsers: 0,
-    ramUsage: 0,
-    cpuUsage: 0,
-    enabledCommands: 0,
-    totalCommandsAvailable: 0
-  });
-  const [settings, setSettings] = useState<BotSettings>({
-    botName: 'Queen Bot Pro',
-    prefix: '.',
-    language: 'EN',
-    ownerNumber: '',
-    autoReact: true,
-    autoRead: false,
-    autoTyping: true,
-    welcomeMessage: true,
-    antiLink: false,
-    antiSpam: true,
-    autoReply: false,
-    aiChatbot: false,
-    voiceToText: false,
-    textToVoice: false,
-    imageGeneration: false,
-    weatherUpdates: true,
-    newsUpdates: true,
-    reminderSystem: true,
-    groupManagement: true,
-    adminOnly: false,
-    groupAdminOnly: false,
-    blockUnknown: false,
-    antiFlood: true,
-    maxMessagesPerMinute: 10,
-    maxDownloadSize: '100MB',
-    allowedFileTypes: ['image', 'video', 'audio', 'document'],
-    autoDownloadMedia: false,
-    compressImages: true,
-    responseDelay: 1000,
-    workMode: 'public',
-    logMessages: true,
-    saveMedia: true,
-    notifyOnCommand: true,
-    notifyOnError: true,
-    notifyOnNewUser: false,
-    notifyOnGroupJoin: true,
-    autoReplyText: 'Hello! I am currently unavailable. I will get back to you soon.',
-    autoReplyEnabled: false,
-    welcomeText: 'Welcome to our group! Please read the rules and enjoy your stay.',
-    enabledCommands: {
-      ping: true,
-      help: true,
-      info: true,
-      weather: true,
-      translate: true,
-      sticker: true,
-      download: true,
-      ai: true,
-      news: true,
-      reminder: true,
-      ban: true,
-      unban: true,
-      kick: true,
-      promote: true,
-      demote: true,
-      mute: true,
-      unmute: true,
-      everyone: true,
-      tagall: true,
-      joke: true,
-      quote: true,
-      fact: true,
-      meme: true,
-      calculator: true,
-      qr: true,
-      time: true,
-      uptime: true,
-      stats: true
+  const [activeTab, setActiveTab] = useState('connect');
+  const [botStatus, setBotStatus] = useState<BotStatus>({
+    connected: false,
+    connectionState: 'disconnected',
+    stats: {
+      uptime: 0,
+      totalUsers: 0,
+      totalGroups: 0,
+      totalCommands: 0,
+      messageCount: 0,
+      ramUsage: 0,
+      cpuUsage: 0
     }
   });
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [connectionMethod, setConnectionMethod] = useState<'qr' | 'pairing'>('qr');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [socket, setSocket] = useState<any>(null);
+  const [showPhoneNumber, setShowPhoneNumber] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [qrExpiring, setQrExpiring] = useState(false);
+  const [pairingExpired, setPairingExpired] = useState(false);
+  const [connectionProgress, setConnectionProgress] = useState(0);
 
   useEffect(() => {
+    if (user) {
+      fetchBotStatus();
+      fetchSettings();
+      initializeSocket();
+    }
+  }, [user]);
+
+  const initializeSocket = () => {
     const newSocket = io('http://localhost:3001');
     setSocket(newSocket);
     
@@ -206,72 +167,172 @@ export default function Dashboard() {
     newSocket.on('qr-code', (data) => {
       if (data.userId === user?.id) {
         setQrCode(data.qrCode);
-        setShowQR(true);
         setLoading(false);
-        toast.success('QR Code generated! Please scan with WhatsApp');
+        setQrExpiring(false);
+        setConnectionProgress(50);
+        toast.success('📱 High-quality QR Code generated! Scan with WhatsApp', {
+          duration: 8000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
+      }
+    });
+
+    newSocket.on('pairing-code', (data) => {
+      if (data.userId === user?.id) {
+        setPairingCode(data.code);
+        setLoading(false);
+        setPairingExpired(false);
+        setConnectionProgress(50);
+        toast.success(`🔢 Pairing code generated: ${data.code}`, {
+          duration: 10000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
+      }
+    });
+
+    newSocket.on('qr-expiring', (data) => {
+      if (data.userId === user?.id) {
+        setQrExpiring(true);
+        toast('🔄 QR code expiring soon, generating new one...', { 
+          icon: '⏰',
+          duration: 3000 
+        });
+      }
+    });
+
+    newSocket.on('pairing-expired', (data) => {
+      if (data.userId === user?.id) {
+        setPairingExpired(true);
+        setPairingCode(null);
+        toast.error('⏰ Pairing code expired. Please generate a new one.', {
+          duration: 5000
+        });
+      }
+    });
+
+    newSocket.on('bot-connecting', (data) => {
+      if (data.userId === user?.id) {
+        setBotStatus(prev => ({ ...prev, connectionState: 'connecting' }));
+        setConnectionProgress(25);
+        toast.loading('🔗 Connecting to WhatsApp...', { id: 'connecting' });
+      }
+    });
+
+    newSocket.on('bot-reconnecting', (data) => {
+      if (data.userId === user?.id) {
+        setReconnectAttempt(data.attempt || 1);
+        setBotStatus(prev => ({ ...prev, connectionState: 'reconnecting' }));
+        setConnectionProgress(30);
+        toast.loading(`🔄 Reconnecting... (${data.attempt}/3)`, { id: 'reconnecting' });
       }
     });
 
     newSocket.on('bot-connected', (data) => {
       if (data.userId === user?.id) {
-        setBotConnected(true);
-        setShowQR(false);
+        setBotStatus(prev => ({
+          ...prev,
+          connected: true,
+          connectionState: 'connected',
+          botInfo: data.botInfo
+        }));
+        setQrCode(null);
+        setPairingCode(null);
         setLoading(false);
-        toast.success('🎉 Bot connected successfully!');
-        fetchBotStatus();
+        setReconnectAttempt(0);
+        setConnectionProgress(100);
+        toast.dismiss();
+        toast.success('🎉 Bot connected successfully!', {
+          duration: 8000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
+        
+        // Reset progress after animation
+        setTimeout(() => setConnectionProgress(0), 2000);
       }
     });
 
     newSocket.on('bot-disconnected', (data) => {
       if (data.userId === user?.id) {
-        setBotConnected(false);
-        setShowQR(false);
-        toast.error('Bot disconnected');
-      }
-    });
-
-    newSocket.on('qr-hidden', (data) => {
-      if (data.userId === user?.id) {
-        setShowQR(false);
-      }
-    });
-
-    newSocket.on('bot-stats-updated', (data) => {
-      if (data.userId === user?.id) {
-        setStats(data.stats);
-      }
-    });
-
-    newSocket.on('settings-updated', (data) => {
-      if (data.userId === user?.id) {
-        setSettings(data.settings);
-        toast.success('Settings updated successfully!');
-      }
-    });
-
-    newSocket.on('command-used', (data) => {
-      if (data.userId === user?.id) {
-        toast.success(`Command .${data.command} executed`);
+        setBotStatus(prev => ({ 
+          ...prev, 
+          connected: false, 
+          connectionState: 'disconnected',
+          botInfo: undefined 
+        }));
+        setQrCode(null);
+        setPairingCode(null);
+        setLoading(false);
+        setConnectionProgress(0);
+        toast.dismiss();
+        toast.error('🔌 Bot disconnected', { 
+          duration: 5000,
+          style: {
+            background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+            color: 'white'
+          }
+        });
       }
     });
 
     newSocket.on('bot-error', (data) => {
       if (data.userId === user?.id) {
-        toast.error(data.error);
+        setLoading(false);
+        setConnectionProgress(0);
+        toast.dismiss();
+        
+        let errorMessage = data.error;
+        let toastStyle = {
+          background: 'linear-gradient(135deg, #EF4444, #DC2626)',
+          color: 'white'
+        };
+        
+        if (data.type === 'pairing') {
+          errorMessage = `📱 ${errorMessage}\n\nTips:\n• Include country code (e.g., 1234567890)\n• Remove spaces and special characters\n• Try QR code method instead`;
+        } else if (data.type === 'qr') {
+          errorMessage = `📱 ${errorMessage}\n\nTips:\n• Ensure good internet connection\n• Try refreshing the page\n• Use pairing code method instead`;
+        }
+        
+        toast.error(errorMessage, {
+          duration: 10000,
+          style: toastStyle
+        });
       }
     });
 
-    fetchBotStatus();
-    fetchBotSettings();
+    newSocket.on('qr-expired', (data) => {
+      if (data.userId === user?.id) {
+        setQrCode(null);
+        setQrExpiring(false);
+        toast('🔄 QR code expired. Generating new one...', { 
+          icon: '⏰',
+          duration: 3000 
+        });
+      }
+    });
 
-    // Auto-refresh stats every 10 seconds
-    const statsInterval = setInterval(fetchBotStatus, 10000);
+    newSocket.on('settings-updated', (data) => {
+      if (data.userId === user?.id) {
+        toast.success('⚙️ Settings updated successfully!', {
+          duration: 4000,
+          style: {
+            background: 'linear-gradient(135deg, #10B981, #059669)',
+            color: 'white'
+          }
+        });
+      }
+    });
 
-    return () => {
-      newSocket.disconnect();
-      clearInterval(statsInterval);
-    };
-  }, [user?.id]);
+    return () => newSocket.disconnect();
+  };
 
   const fetchBotStatus = async () => {
     try {
@@ -281,15 +342,14 @@ export default function Dashboard() {
       
       if (response.ok) {
         const data = await response.json();
-        setBotConnected(data.connected);
-        setStats(data.stats);
+        setBotStatus(data);
       }
     } catch (error) {
       console.error('Error fetching bot status:', error);
     }
   };
 
-  const fetchBotSettings = async () => {
+  const fetchSettings = async () => {
     try {
       const response = await fetch('/api/bot/settings', {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -300,12 +360,36 @@ export default function Dashboard() {
         setSettings(data);
       }
     } catch (error) {
-      console.error('Error fetching bot settings:', error);
+      console.error('Error fetching settings:', error);
     }
   };
 
   const connectBot = async () => {
+    if (botStatus.connected) {
+      toast.error('🤖 Bot is already connected!');
+      return;
+    }
+
+    if (connectionMethod === 'pairing' && !phoneNumber) {
+      toast.error('📱 Please enter your phone number with country code\n\nExample: 1234567890 (without + or spaces)');
+      return;
+    }
+
+    if (connectionMethod === 'pairing') {
+      const cleanNumber = phoneNumber.replace(/[^\d]/g, '');
+      if (cleanNumber.length < 10 || cleanNumber.length > 15) {
+        toast.error('📱 Please enter a valid phone number with country code\n\nExample: 1234567890 (10-15 digits)');
+        return;
+      }
+    }
+
     setLoading(true);
+    setQrCode(null);
+    setPairingCode(null);
+    setQrExpiring(false);
+    setPairingExpired(false);
+    setConnectionProgress(10);
+
     try {
       const response = await fetch('/api/bot/connect', {
         method: 'POST',
@@ -313,39 +397,57 @@ export default function Dashboard() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ method: 'qr' })
+        body: JSON.stringify({
+          method: connectionMethod,
+          phoneNumber: connectionMethod === 'pairing' ? phoneNumber : undefined
+        })
       });
 
       if (response.ok) {
-        toast.success('Connecting bot... QR code will appear shortly');
+        setConnectionProgress(20);
+        toast.success(`🚀 Connecting via ${connectionMethod}...`, { 
+          duration: 5000,
+          style: {
+            background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+            color: 'white'
+          }
+        });
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to connect bot');
+        toast.error(`❌ ${error.error}`);
         setLoading(false);
+        setConnectionProgress(0);
       }
     } catch (error) {
       console.error('Error connecting bot:', error);
-      toast.error('Failed to connect bot');
+      toast.error('❌ Failed to connect bot. Please check your internet connection.');
       setLoading(false);
+      setConnectionProgress(0);
     }
   };
 
   const disconnectBot = async () => {
     try {
-      await fetch('/api/bot/disconnect', {
+      const response = await fetch('/api/bot/disconnect', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      setBotConnected(false);
-      setShowQR(false);
-      toast.success('Bot disconnected successfully');
+
+      if (response.ok) {
+        toast.success('✅ Bot disconnected successfully');
+      }
     } catch (error) {
       console.error('Error disconnecting bot:', error);
-      toast.error('Failed to disconnect bot');
+      toast.error('❌ Failed to disconnect bot');
     }
   };
 
-  const updateSettings = async (newSettings: Partial<BotSettings>) => {
+  const updateSettings = async (newSettings: Partial<Settings>) => {
+    if (!settings) return;
+
+    const updatedSettings = { ...settings, ...newSettings };
+    setSettings(updatedSettings);
+
     try {
       const response = await fetch('/api/bot/settings', {
         method: 'POST',
@@ -353,17 +455,45 @@ export default function Dashboard() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ ...settings, ...newSettings })
+        body: JSON.stringify(updatedSettings)
       });
 
-      if (response.ok) {
-        setSettings(prev => ({ ...prev, ...newSettings }));
-      } else {
-        toast.error('Failed to update settings');
+      if (!response.ok) {
+        const error = await response.json();
+        toast.error(error.error);
+        setSettings(settings); // Revert on error
       }
     } catch (error) {
       console.error('Error updating settings:', error);
       toast.error('Failed to update settings');
+      setSettings(settings); // Revert on error
+    }
+  };
+
+  const copyPairingCode = () => {
+    if (pairingCode) {
+      navigator.clipboard.writeText(pairingCode);
+      setCopied(true);
+      toast.success('📋 Pairing code copied to clipboard!');
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const refreshConnection = async () => {
+    try {
+      const response = await fetch('/api/bot/refresh-qr', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+
+      if (response.ok) {
+        toast.success('🔄 Refreshing connection...');
+        setQrCode(null);
+        setPairingCode(null);
+      }
+    } catch (error) {
+      console.error('Error refreshing connection:', error);
+      toast.error('❌ Failed to refresh connection');
     }
   };
 
@@ -377,619 +507,42 @@ export default function Dashboard() {
     return `${minutes}m`;
   };
 
-  const renderOverview = () => (
-    <div className="space-y-6">
-      {/* Connection Status */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-effect rounded-2xl p-6"
-      >
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-white flex items-center">
-            <Smartphone className="w-6 h-6 mr-2" />
-            WhatsApp Connection
-          </h3>
-          <div className={`flex items-center space-x-2 px-4 py-2 rounded-full ${
-            botConnected ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
-          }`}>
-            {botConnected ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
-            <span className="font-medium">
-              {botConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-        </div>
+  const getConnectionStatusColor = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return 'text-green-400';
+      case 'connecting': 
+      case 'reconnecting': return 'text-yellow-400';
+      case 'error': return 'text-red-400';
+      default: return 'text-gray-400';
+    }
+  };
 
-        {!botConnected && (
-          <div className="space-y-4">
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-4">
-              <h4 className="text-blue-300 font-medium mb-2">🚀 Quick Setup Guide</h4>
-              <ol className="text-blue-200 text-sm space-y-1">
-                <li>1. Click "Connect Bot" below</li>
-                <li>2. Scan the QR code with WhatsApp</li>
-                <li>3. Your bot will be ready in seconds!</li>
-              </ol>
-            </div>
-            
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={connectBot}
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-green-500 to-blue-500 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-lg"
-            >
-              {loading ? (
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-              ) : (
-                <>
-                  <Play className="w-5 h-5" />
-                  <span>Connect Bot</span>
-                </>
-              )}
-            </motion.button>
-          </div>
-        )}
+  const getConnectionStatusIcon = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return <Wifi className="w-4 h-4" />;
+      case 'connecting': 
+      case 'reconnecting': return <Loader className="w-4 h-4 animate-spin" />;
+      case 'error': return <AlertCircle className="w-4 h-4" />;
+      default: return <WifiOff className="w-4 h-4" />;
+    }
+  };
 
-        {botConnected && (
-          <div className="space-y-4">
-            <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
-              <div className="flex items-center space-x-2 mb-2">
-                <CheckCircle className="w-5 h-5 text-green-400" />
-                <h4 className="text-green-300 font-medium">Bot is Active!</h4>
-              </div>
-              <p className="text-green-200 text-sm">Your WhatsApp bot is connected and ready to serve users.</p>
-            </div>
-            
-            <div className="flex space-x-3">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={disconnectBot}
-                className="flex-1 bg-red-500/20 text-red-300 border border-red-500/50 py-3 px-4 rounded-xl hover:bg-red-500/30 flex items-center justify-center space-x-2"
-              >
-                <Pause className="w-4 h-4" />
-                <span>Disconnect</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  disconnectBot();
-                  setTimeout(connectBot, 1000);
-                }}
-                className="flex-1 bg-blue-500/20 text-blue-300 border border-blue-500/50 py-3 px-4 rounded-xl hover:bg-blue-500/30 flex items-center justify-center space-x-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>Restart</span>
-              </motion.button>
-            </div>
-          </div>
-        )}
+  const getConnectionStatusText = () => {
+    switch (botStatus.connectionState) {
+      case 'connected': return 'Connected';
+      case 'connecting': return 'Connecting...';
+      case 'reconnecting': return `Reconnecting... (${reconnectAttempt}/3)`;
+      case 'error': return 'Error';
+      default: return 'Disconnected';
+    }
+  };
 
-        {showQR && qrCode && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mt-6 text-center"
-          >
-            <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-xl p-6">
-              <h4 className="text-white font-medium mb-4 flex items-center justify-center">
-                <QrCode className="w-5 h-5 mr-2" />
-                Scan QR Code with WhatsApp
-              </h4>
-              <div className="bg-white p-4 rounded-xl inline-block shadow-lg">
-                <img src={qrCode} alt="QR Code" className="w-64 h-64" />
-              </div>
-              <p className="text-white/60 text-xs mt-4">
-                Open WhatsApp → Settings → Linked Devices → Link a Device
-              </p>
-              <div className="mt-3 flex items-center justify-center space-x-2 text-yellow-400">
-                <Clock className="w-4 h-4" />
-                <span className="text-sm">QR code expires in 20 seconds</span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </motion.div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: 'Uptime', value: formatUptime(stats.uptime), icon: Clock, color: 'green', trend: '+5%' },
-          { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'blue', trend: '+12%' },
-          { label: 'Messages', value: stats.messageCount.toLocaleString(), icon: MessageSquare, color: 'purple', trend: '+23%' },
-          { label: 'Commands', value: stats.totalCommands.toLocaleString(), icon: Command, color: 'orange', trend: '+18%' }
-        ].map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="glass-effect rounded-xl p-6 hover:bg-white/10 transition-all duration-300"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <stat.icon className={`w-8 h-8 text-${stat.color}-400`} />
-              <span className="text-green-400 text-sm font-medium">{stat.trend}</span>
-            </div>
-            <p className="text-white/70 text-sm">{stat.label}</p>
-            <p className="text-2xl font-bold text-white">{stat.value}</p>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* System Performance */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Monitor className="w-5 h-5 mr-2" />
-          System Performance
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-white/70 flex items-center">
-                <Cpu className="w-4 h-4 mr-1" />
-                CPU Usage
-              </span>
-              <span className="text-white">{stats.cpuUsage}%</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-3">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${stats.cpuUsage}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-                className={`h-3 rounded-full ${
-                  stats.cpuUsage > 80 ? 'bg-red-500' : 
-                  stats.cpuUsage > 60 ? 'bg-yellow-500' : 
-                  'bg-gradient-to-r from-green-400 to-blue-500'
-                }`}
-              ></motion.div>
-            </div>
-          </div>
-          
-          <div>
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-white/70 flex items-center">
-                <HardDrive className="w-4 h-4 mr-1" />
-                RAM Usage
-              </span>
-              <span className="text-white">{stats.ramUsage}%</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-3">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${stats.ramUsage}%` }}
-                transition={{ duration: 1, ease: "easeOut" }}
-                className={`h-3 rounded-full ${
-                  stats.ramUsage > 80 ? 'bg-red-500' : 
-                  stats.ramUsage > 60 ? 'bg-yellow-500' : 
-                  'bg-gradient-to-r from-yellow-400 to-orange-500'
-                }`}
-              ></motion.div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { label: 'Active Users', value: stats.activeUsers, icon: TrendingUp, color: 'green', description: 'Users online now' },
-          { label: 'Groups', value: stats.totalGroups, icon: Users, color: 'blue', description: 'Connected groups' },
-          { label: 'Commands Available', value: stats.totalCommandsAvailable, icon: BarChart3, color: 'purple', description: 'Total bot commands' }
-        ].map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 + index * 0.1 }}
-            className="glass-effect rounded-xl p-6 text-center hover:bg-white/10 transition-all duration-300"
-          >
-            <stat.icon className={`w-8 h-8 text-${stat.color}-400 mx-auto mb-3`} />
-            <p className="text-3xl font-bold text-white mb-1">{stat.value}</p>
-            <p className="text-white/70 text-sm font-medium">{stat.label}</p>
-            <p className="text-white/50 text-xs mt-1">{stat.description}</p>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderSettings = () => (
-    <div className="space-y-6">
-      {/* Basic Settings */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Settings className="w-5 h-5 mr-2" />
-          Basic Configuration
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-white/70 text-sm mb-2">Bot Name</label>
-            <input
-              type="text"
-              value={settings.botName}
-              onChange={(e) => updateSettings({ botName: e.target.value })}
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 backdrop-blur-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-white/70 text-sm mb-2">Command Prefix</label>
-            <input
-              type="text"
-              value={settings.prefix}
-              onChange={(e) => updateSettings({ prefix: e.target.value })}
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 backdrop-blur-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-white/70 text-sm mb-2">Language</label>
-            <select
-              value={settings.language}
-              onChange={(e) => updateSettings({ language: e.target.value })}
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 backdrop-blur-sm"
-            >
-              <option value="EN">English</option>
-              <option value="SI">Sinhala</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-white/70 text-sm mb-2">Owner Number</label>
-            <input
-              type="tel"
-              value={settings.ownerNumber}
-              onChange={(e) => updateSettings({ ownerNumber: e.target.value })}
-              placeholder="+1234567890"
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 backdrop-blur-sm"
-            />
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Behavior Settings */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Bot className="w-5 h-5 mr-2" />
-          Bot Behavior
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            { key: 'autoReact', label: 'Auto React', desc: 'Automatically react to messages', icon: '😊' },
-            { key: 'autoRead', label: 'Auto Read', desc: 'Mark messages as read automatically', icon: '👁️' },
-            { key: 'autoTyping', label: 'Auto Typing', desc: 'Show typing indicator', icon: '⌨️' },
-            { key: 'welcomeMessage', label: 'Welcome Message', desc: 'Send welcome to new members', icon: '👋' },
-            { key: 'antiLink', label: 'Anti Link', desc: 'Block links in groups', icon: '🔗' },
-            { key: 'antiSpam', label: 'Anti Spam', desc: 'Prevent spam messages', icon: '🛡️' }
-          ].map((setting) => (
-            <motion.div
-              key={setting.key}
-              whileHover={{ scale: 1.02 }}
-              className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-            >
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">{setting.icon}</span>
-                <div>
-                  <p className="text-white font-medium text-sm">{setting.label}</p>
-                  <p className="text-white/60 text-xs">{setting.desc}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => updateSettings({ [setting.key]: !settings[setting.key as keyof BotSettings] })}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  settings[setting.key as keyof BotSettings] ? 'bg-green-500' : 'bg-gray-600'
-                }`}
-              >
-                <motion.div
-                  animate={{
-                    x: settings[setting.key as keyof BotSettings] ? 24 : 2
-                  }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg"
-                />
-              </button>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Advanced Features */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Zap className="w-5 h-5 mr-2" />
-          Advanced Features
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[
-            { key: 'aiChatbot', label: 'AI Chatbot', desc: 'Enable AI-powered responses', icon: '🤖' },
-            { key: 'voiceToText', label: 'Voice to Text', desc: 'Convert voice messages to text', icon: '🎤' },
-            { key: 'textToVoice', label: 'Text to Voice', desc: 'Convert text to voice messages', icon: '🔊' },
-            { key: 'imageGeneration', label: 'Image Generation', desc: 'Generate images with AI', icon: '🎨' },
-            { key: 'weatherUpdates', label: 'Weather Updates', desc: 'Provide weather information', icon: '🌤️' },
-            { key: 'newsUpdates', label: 'News Updates', desc: 'Send latest news updates', icon: '📰' }
-          ].map((setting) => (
-            <motion.div
-              key={setting.key}
-              whileHover={{ scale: 1.02 }}
-              className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-            >
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">{setting.icon}</span>
-                <div>
-                  <p className="text-white font-medium text-sm">{setting.label}</p>
-                  <p className="text-white/60 text-xs">{setting.desc}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => updateSettings({ [setting.key]: !settings[setting.key as keyof BotSettings] })}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  settings[setting.key as keyof BotSettings] ? 'bg-green-500' : 'bg-gray-600'
-                }`}
-              >
-                <motion.div
-                  animate={{
-                    x: settings[setting.key as keyof BotSettings] ? 24 : 2
-                  }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg"
-                />
-              </button>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Command Management */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Command className="w-5 h-5 mr-2" />
-          Command Management
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Object.entries(settings.enabledCommands).map(([command, enabled]) => (
-            <motion.div
-              key={command}
-              whileHover={{ scale: 1.02 }}
-              className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-            >
-              <div>
-                <p className="text-white font-medium text-sm">.{command}</p>
-                <p className="text-white/60 text-xs">Enable/disable command</p>
-              </div>
-              <button
-                onClick={() => updateSettings({ 
-                  enabledCommands: { ...settings.enabledCommands, [command]: !enabled }
-                })}
-                className={`relative w-12 h-6 rounded-full transition-colors ${
-                  enabled ? 'bg-green-500' : 'bg-gray-600'
-                }`}
-              >
-                <motion.div
-                  animate={{ x: enabled ? 24 : 2 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg"
-                />
-              </button>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-    </div>
-  );
-
-  const renderTerminal = () => <Terminal />;
-
-  const renderDeveloper = () => (
-    <div className="space-y-6">
-      {/* Developer Profile */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-effect rounded-xl p-8"
-      >
-        <div className="text-center">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-            className="bg-gradient-to-r from-purple-500 to-blue-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl"
-          >
-            <User className="w-16 h-16 text-white" />
-          </motion.div>
-          <h2 className="text-4xl font-bold text-white mb-2">DarkWinzo</h2>
-          <p className="text-white/70 mb-6 text-lg">Full Stack Developer & Bot Creator</p>
-          <div className="flex justify-center flex-wrap gap-2 mb-6">
-            {['JavaScript', 'Node.js', 'React', 'Baileys', 'TypeScript', 'Socket.IO'].map((tech) => (
-              <span key={tech} className="px-4 py-2 bg-purple-500/20 text-purple-300 rounded-full text-sm font-medium border border-purple-500/30">
-                {tech}
-              </span>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Contact Information */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <MessageCircle className="w-5 h-5 mr-2" />
-          Contact Information
-        </h3>
-        <div className="space-y-4">
-          {[
-            { icon: Mail, label: 'Email', value: 'isurulakshan9998@gmail.com', href: 'mailto:isurulakshan9998@gmail.com' },
-            { icon: Github, label: 'GitHub', value: 'github.com/DarkWinzo', href: 'https://github.com/DarkWinzo' },
-            { icon: MessageSquare, label: 'WhatsApp Support', value: 'Available for technical support', href: '#' },
-            { icon: Globe, label: 'Portfolio', value: 'darkwinzo.dev', href: 'https://darkwinzo.dev' }
-          ].map((contact, index) => (
-            <motion.a
-              key={contact.label}
-              href={contact.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              whileHover={{ scale: 1.02 }}
-              className="flex items-center space-x-4 p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
-            >
-              <div className="bg-blue-500/20 p-3 rounded-lg">
-                <contact.icon className="w-6 h-6 text-blue-400" />
-              </div>
-              <div className="flex-1">
-                <p className="text-white font-medium">{contact.label}</p>
-                <p className="text-blue-400 hover:text-blue-300 flex items-center space-x-1">
-                  <span>{contact.value}</span>
-                  {contact.href !== '#' && <ExternalLink className="w-4 h-4" />}
-                </p>
-              </div>
-            </motion.a>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Project Stats */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <BarChart3 className="w-5 h-5 mr-2" />
-          Project Statistics
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { icon: Star, value: '4.9', label: 'Rating', color: 'yellow', description: 'User satisfaction' },
-            { icon: Users, value: '10K+', label: 'Active Users', color: 'blue', description: 'Worldwide users' },
-            { icon: Zap, value: '99.9%', label: 'Uptime', color: 'purple', description: 'Service reliability' }
-          ].map((stat, index) => (
-            <motion.div
-              key={stat.label}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 + index * 0.1 }}
-              className="text-center p-6 bg-white/5 rounded-lg border border-white/10"
-            >
-              <stat.icon className={`w-12 h-12 text-${stat.color}-400 mx-auto mb-4`} />
-              <p className="text-3xl font-bold text-white">{stat.value}</p>
-              <p className="text-white/70 text-sm font-medium">{stat.label}</p>
-              <p className="text-white/50 text-xs mt-1">{stat.description}</p>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Technology Stack */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Layers className="w-5 h-5 mr-2" />
-          Technology Stack
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 className="text-white font-medium mb-3 flex items-center">
-              <Server className="w-4 h-4 mr-2" />
-              Backend
-            </h4>
-            <div className="space-y-2">
-              {['Node.js', 'Express.js', 'Baileys', 'Socket.IO', 'JWT Authentication'].map((tech) => (
-                <div key={tech} className="flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-white/70 text-sm">{tech}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h4 className="text-white font-medium mb-3 flex items-center">
-              <Globe className="w-4 h-4 mr-2" />
-              Frontend
-            </h4>
-            <div className="space-y-2">
-              {['React 18', 'TypeScript', 'Tailwind CSS', 'Framer Motion', 'Vite'].map((tech) => (
-                <div key={tech} className="flex items-center space-x-2">
-                  <CheckCircle className="w-4 h-4 text-blue-400" />
-                  <span className="text-white/70 text-sm">{tech}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Support & Donations */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4 }}
-        className="glass-effect rounded-xl p-6"
-      >
-        <h3 className="text-lg font-semibold text-white mb-6 flex items-center">
-          <Heart className="w-5 h-5 mr-2" />
-          Support the Project
-        </h3>
-        <div className="text-center">
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <Coffee className="w-16 h-16 text-orange-400 mx-auto mb-4" />
-          </motion.div>
-          <p className="text-white/70 mb-6 text-lg">
-            If you find this bot helpful, consider supporting the development!
-          </p>
-          <div className="flex justify-center space-x-4">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 rounded-xl hover:from-orange-600 hover:to-red-600 flex items-center space-x-2 shadow-lg"
-            >
-              <Heart className="w-5 h-5" />
-              <span>Buy me a coffee</span>
-            </motion.button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-6 py-3 rounded-xl hover:from-purple-600 hover:to-blue-600 flex items-center space-x-2 shadow-lg"
-            >
-              <Star className="w-5 h-5" />
-              <span>Star on GitHub</span>
-            </motion.button>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
+  const tabs = [
+    { id: 'connect', label: 'Connect Bot', icon: Bot },
+    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'terminal', label: 'Terminal', icon: Activity },
+    { id: 'developer', label: 'Developer', icon: User }
+  ];
 
   return (
     <div className="min-h-screen p-6">
@@ -1002,49 +555,84 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <motion.div
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                className="bg-gradient-to-r from-purple-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center shadow-lg"
-              >
+              <div className="bg-gradient-to-r from-purple-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center floating-animation relative">
                 <Bot className="w-8 h-8 text-white" />
-              </motion.div>
+                {botStatus.connected && (
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+                )}
+              </div>
               <div>
                 <h1 className="text-3xl font-bold text-white">WhatsApp Bot Dashboard</h1>
-                <p className="text-white/70">Welcome back, <span className="text-blue-300 font-medium">{user?.username}</span>!</p>
+                <p className="text-white/70">Welcome back, {user?.username}!</p>
               </div>
             </div>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={logout}
-              className="p-3 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
-            >
-              <LogOut className="w-6 h-6" />
-            </motion.button>
+            <div className="flex items-center space-x-4">
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-full bg-black/20 backdrop-blur-sm border border-white/20 relative overflow-hidden`}>
+                {connectionProgress > 0 && (
+                  <div 
+                    className="absolute inset-0 bg-gradient-to-r from-blue-500/30 to-green-500/30 transition-all duration-1000"
+                    style={{ width: `${connectionProgress}%` }}
+                  />
+                )}
+                <div className={`relative z-10 ${getConnectionStatusColor()}`}>
+                  {getConnectionStatusIcon()}
+                </div>
+                <span className={`relative z-10 text-sm font-medium ${getConnectionStatusColor()}`}>
+                  {getConnectionStatusText()}
+                </span>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={logout}
+                className="p-3 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+              >
+                <LogOut className="w-6 h-6" />
+              </motion.button>
+            </div>
           </div>
         </motion.div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+          {[
+            { label: 'Messages', value: botStatus.stats.messageCount, icon: MessageSquare, color: 'blue' },
+            { label: 'Commands', value: botStatus.stats.totalCommands, icon: Command, color: 'green' },
+            { label: 'Groups', value: botStatus.stats.totalGroups, icon: Users, color: 'purple' },
+            { label: 'Uptime', value: formatUptime(botStatus.stats.uptime), icon: Clock, color: 'orange' }
+          ].map((stat, index) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="glass-effect rounded-xl p-6"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <stat.icon className={`w-8 h-8 text-${stat.color}-400`} />
+                <div className={`w-3 h-3 rounded-full bg-${stat.color}-400 animate-pulse`}></div>
+              </div>
+              <p className="text-white/70 text-sm">{stat.label}</p>
+              <p className="text-2xl font-bold text-white">{stat.value}</p>
+            </motion.div>
+          ))}
+        </div>
 
         {/* Navigation Tabs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.4 }}
           className="glass-effect rounded-xl p-2 mb-6"
         >
           <div className="flex space-x-2">
-            {[
-              { id: 'overview', label: 'Overview', icon: Monitor },
-              { id: 'settings', label: 'Settings', icon: Settings },
-              { id: 'terminal', label: 'Terminal', icon: TerminalIcon },
-              { id: 'developer', label: 'Developer', icon: User }
-            ].map((tab) => (
+            {tabs.map((tab) => (
               <motion.button
                 key={tab.id}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center space-x-2 py-4 px-6 rounded-lg transition-all ${
+                className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
                   activeTab === tab.id
                     ? 'bg-white/20 text-white shadow-lg'
                     : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -1058,17 +646,597 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Tab Content */}
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'settings' && renderSettings()}
-          {activeTab === 'terminal' && renderTerminal()}
-          {activeTab === 'developer' && renderDeveloper()}
-        </motion.div>
+        <AnimatePresence mode="wait">
+          {activeTab === 'connect' && (
+            <motion.div
+              key="connect"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* Connection Method Selection */}
+              <div className="glass-effect rounded-2xl p-8">
+                <div className="text-center mb-8">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className="w-24 h-24 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 relative"
+                  >
+                    <Bot className="w-12 h-12 text-white" />
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 animate-pulse opacity-50"></div>
+                  </motion.div>
+                  <h2 className="text-3xl font-bold text-white mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    Connect Your WhatsApp Bot
+                  </h2>
+                  <p className="text-white/70 text-lg">Choose your preferred connection method</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                  <motion.div
+                    whileHover={{ scale: 1.02, y: -5 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-8 rounded-2xl border-2 cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                      connectionMethod === 'qr'
+                        ? 'border-blue-500 bg-gradient-to-br from-blue-500/20 to-purple-500/20 shadow-2xl'
+                        : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
+                    }`}
+                    onClick={() => setConnectionMethod('qr')}
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/20 to-transparent rounded-full -translate-y-16 translate-x-16"></div>
+                    <div className="relative z-10">
+                      <div className="flex items-center space-x-4 mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center">
+                          <QrCode className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-white">QR Code</h3>
+                          <p className="text-blue-300 font-medium">Scan with WhatsApp</p>
+                        </div>
+                      </div>
+                      <p className="text-white/80 leading-relaxed mb-4">
+                        Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, and scan the QR code that appears.
+                      </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">High-quality QR generation</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">Auto-refresh on expiry</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-green-400">
+                          <CheckCircle className="w-4 h-4" />
+                          <span className="text-sm">Recommended for most users</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    whileHover={{ scale: 1.02, y: -5 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`p-8 rounded-2xl border-2 cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                      connectionMethod === 'pairing'
+                        ? 'border-green-500 bg-gradient-to-br from-green-500/20 to-emerald-500/20 shadow-2xl'
+                        : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
+                    }`}
+                    onClick={() => setConnectionMethod('pairing')}
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/20 to-transparent rounded-full -translate-y-16 translate-x-16"></div>
+                    <div className="relative z-10">
+                      <div className="flex items-center space-x-4 mb-6">
+                        <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center">
+                          <Smartphone className="w-8 h-8 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold text-white">Phone Pairing</h3>
+                          <p className="text-green-300 font-medium">Use pairing code</p>
+                        </div>
+                      </div>
+                      <p className="text-white/80 leading-relaxed mb-4">
+                        Enter your phone number to receive a pairing code that you can enter in WhatsApp for secure connection.
+                      </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Shield className="w-4 h-4" />
+                          <span className="text-sm">Enhanced security</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Key className="w-4 h-4" />
+                          <span className="text-sm">6-digit pairing code</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-blue-400">
+                          <Timer className="w-4 h-4" />
+                          <span className="text-sm">60-second validity</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+
+                {/* Phone Number Input for Pairing */}
+                <AnimatePresence>
+                  {connectionMethod === 'pairing' && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mb-8"
+                    >
+                      <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-2xl p-6">
+                        <label className="block text-white font-semibold text-lg mb-4">
+                          Phone Number (with country code)
+                        </label>
+                        <div className="relative">
+                          <Phone className="absolute left-4 top-1/2 transform -translate-y-1/2 w-6 h-6 text-green-400" />
+                          <input
+                            type="tel"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value)}
+                            placeholder="1234567890"
+                            className="w-full bg-black/30 border border-white/30 rounded-xl pl-14 pr-14 py-4 text-white text-lg placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPhoneNumber(!showPhoneNumber)}
+                            className="absolute right-4 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors"
+                          >
+                            {showPhoneNumber ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}
+                          </button>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <p className="text-green-300/80 text-sm">
+                            <strong>Format:</strong> Country code + phone number (no + or spaces)
+                          </p>
+                          <p className="text-green-300/80 text-sm">
+                            <strong>Examples:</strong> 1234567890 (US), 447123456789 (UK), 919876543210 (India)
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Connection Button */}
+                <div className="flex items-center justify-center space-x-4">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={connectBot}
+                    disabled={loading || botStatus.connected}
+                    className="flex items-center space-x-3 px-12 py-4 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-white rounded-2xl font-bold text-lg hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-2xl relative overflow-hidden"
+                  >
+                    {connectionProgress > 0 && (
+                      <div 
+                        className="absolute inset-0 bg-white/20 transition-all duration-1000"
+                        style={{ width: `${connectionProgress}%` }}
+                      />
+                    )}
+                    <div className="relative z-10 flex items-center space-x-3">
+                      {loading ? (
+                        <Loader className="w-6 h-6 animate-spin" />
+                      ) : botStatus.connected ? (
+                        <CheckCircle className="w-6 h-6" />
+                      ) : (
+                        <Zap className="w-6 h-6" />
+                      )}
+                      <span>
+                        {loading ? 'Connecting...' : botStatus.connected ? 'Connected' : 'Connect Bot'}
+                      </span>
+                      {!loading && !botStatus.connected && <Sparkles className="w-6 h-6" />}
+                    </div>
+                  </motion.button>
+
+                  {botStatus.connected && (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={disconnectBot}
+                      className="flex items-center space-x-2 px-8 py-4 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-2xl font-semibold hover:from-red-600 hover:to-pink-600 transition-all duration-300 shadow-xl"
+                    >
+                      <X className="w-5 h-5" />
+                      <span>Disconnect</span>
+                    </motion.button>
+                  )}
+
+                  {(qrCode || pairingCode) && (
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={refreshConnection}
+                      className="p-4 text-white/70 hover:text-white hover:bg-white/10 rounded-2xl transition-colors border border-white/20"
+                      title="Refresh Connection"
+                    >
+                      <RotateCcw className="w-6 h-6" />
+                    </motion.button>
+                  )}
+                </div>
+              </div>
+
+              {/* QR Code Display */}
+              <AnimatePresence>
+                {qrCode && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="glass-effect rounded-2xl p-8 text-center"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center space-x-2">
+                        <Scan className="w-6 h-6" />
+                        <span>Scan QR Code</span>
+                      </h3>
+                      <p className="text-white/70">Use your WhatsApp mobile app to scan this code</p>
+                      {qrExpiring && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-yellow-400 text-sm mt-2 flex items-center justify-center space-x-1"
+                        >
+                          <Timer className="w-4 h-4" />
+                          <span>QR code expiring soon, generating new one...</span>
+                        </motion.p>
+                      )}
+                    </div>
+                    
+                    <div className="relative inline-block mb-6">
+                      <div className="bg-white p-8 rounded-3xl shadow-2xl">
+                        <img src={qrCode} alt="QR Code" className="w-80 h-80" />
+                      </div>
+                      <div className="absolute -inset-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-3xl opacity-20 animate-pulse"></div>
+                      {qrExpiring && (
+                        <div className="absolute inset-0 bg-yellow-500/20 rounded-3xl animate-pulse"></div>
+                      )}
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-center space-x-2 mb-3">
+                        <Smartphone className="w-5 h-5 text-blue-400" />
+                        <span className="text-white font-semibold">Step-by-Step Instructions</span>
+                      </div>
+                      <ol className="text-white/80 text-left space-y-2">
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                          <span>Open WhatsApp on your phone</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                          <span>Go to Settings → Linked Devices</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                          <span>Tap "Link a Device"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+                          <span>Scan this QR code</span>
+                        </li>
+                      </ol>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Pairing Code Display */}
+              <AnimatePresence>
+                {pairingCode && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="glass-effect rounded-2xl p-8 text-center"
+                  >
+                    <div className="mb-6">
+                      <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center space-x-2">
+                        <Key className="w-6 h-6" />
+                        <span>Pairing Code</span>
+                      </h3>
+                      <p className="text-white/70">Enter this code in WhatsApp</p>
+                      {pairingExpired && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="text-red-400 text-sm mt-2 flex items-center justify-center space-x-1"
+                        >
+                          <Timer className="w-4 h-4" />
+                          <span>Pairing code expired. Please generate a new one.</span>
+                        </motion.p>
+                      )}
+                    </div>
+                    
+                    <div className={`bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-2xl p-8 mb-6 ${pairingExpired ? 'opacity-50' : ''}`}>
+                      <div className="text-6xl font-mono font-bold text-white mb-4 tracking-wider">
+                        {pairingCode}
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={copyPairingCode}
+                        disabled={pairingExpired}
+                        className="flex items-center space-x-2 mx-auto px-6 py-3 bg-green-500/20 text-green-300 rounded-xl hover:bg-green-500/30 transition-colors border border-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                        <span className="font-semibold">{copied ? 'Copied!' : 'Copy Code'}</span>
+                      </motion.button>
+                    </div>
+                    
+                    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/30 rounded-2xl p-6">
+                      <div className="flex items-center justify-center space-x-2 mb-3">
+                        <Phone className="w-5 h-5 text-green-400" />
+                        <span className="text-white font-semibold">Step-by-Step Instructions</span>
+                      </div>
+                      <ol className="text-white/80 text-left space-y-2">
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">1</span>
+                          <span>Open WhatsApp on your phone</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">2</span>
+                          <span>Go to Settings → Linked Devices</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">3</span>
+                          <span>Tap "Link a Device"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">4</span>
+                          <span>Select "Link with phone number instead"</span>
+                        </li>
+                        <li className="flex items-start space-x-2">
+                          <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold">5</span>
+                          <span>Enter the pairing code: <strong>{pairingCode}</strong></span>
+                        </li>
+                      </ol>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Bot Info */}
+              <AnimatePresence>
+                {botStatus.connected && botStatus.botInfo && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="glass-effect rounded-2xl p-8"
+                  >
+                    <div className="text-center mb-6">
+                      <div className="w-20 h-20 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <CheckCircle className="w-10 h-10 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-white mb-2">Bot Connected Successfully!</h3>
+                      <p className="text-green-300">Your WhatsApp bot is now active and ready to serve</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Bot Name</p>
+                        <p className="text-white font-semibold">{botStatus.botInfo.name}</p>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Push Name</p>
+                        <p className="text-white font-semibold">{botStatus.botInfo.pushName}</p>
+                      </div>
+                      <div className="bg-white/5 rounded-xl p-4 text-center">
+                        <p className="text-white/70 text-sm mb-1">Status</p>
+                        <div className="flex items-center justify-center space-x-2">
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                          <p className="text-green-400 font-semibold">Online</p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          )}
+
+          {activeTab === 'settings' && settings && (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* Basic Settings */}
+              <div className="glass-effect rounded-2xl p-6">
+                <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
+                  <Settings className="w-6 h-6 mr-2" />
+                  Bot Configuration
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">Bot Name</label>
+                    <input
+                      type="text"
+                      value={settings.botName}
+                      onChange={(e) => updateSettings({ botName: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">Command Prefix</label>
+                    <input
+                      type="text"
+                      value={settings.prefix}
+                      onChange={(e) => updateSettings({ prefix: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">Language</label>
+                    <select
+                      value={settings.language}
+                      onChange={(e) => updateSettings({ language: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="EN">English</option>
+                      <option value="SI">Sinhala</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">Work Mode</label>
+                    <select
+                      value={settings.workMode}
+                      onChange={(e) => updateSettings({ workMode: e.target.value })}
+                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="public">Public</option>
+                      <option value="private">Private</option>
+                      <option value="groups">Groups Only</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Behavior Settings */}
+              <div className="glass-effect rounded-2xl p-6">
+                <h3 className="text-xl font-bold text-white mb-6">Bot Behavior</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[
+                    { key: 'autoReact', label: 'Auto React', description: 'Automatically react to messages' },
+                    { key: 'autoRead', label: 'Auto Read', description: 'Mark messages as read automatically' },
+                    { key: 'autoTyping', label: 'Auto Typing', description: 'Show typing indicator' },
+                    { key: 'welcomeMessage', label: 'Welcome Message', description: 'Send welcome to new members' },
+                    { key: 'antiLink', label: 'Anti Link', description: 'Block links in groups' },
+                    { key: 'antiSpam', label: 'Anti Spam', description: 'Prevent spam messages' }
+                  ].map((setting) => (
+                    <div key={setting.key} className="bg-white/5 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-white font-medium">{setting.label}</h4>
+                        <motion.button
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => updateSettings({ [setting.key]: !settings[setting.key as keyof Settings] })}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            settings[setting.key as keyof Settings] ? 'bg-blue-500' : 'bg-gray-600'
+                          }`}
+                        >
+                          <motion.span
+                            animate={{
+                              x: settings[setting.key as keyof Settings] ? 20 : 2
+                            }}
+                            className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                          />
+                        </motion.button>
+                      </div>
+                      <p className="text-white/60 text-sm">{setting.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advanced Features */}
+              <div className="glass-effect rounded-2xl p-6">
+                <h3 className="text-xl font-bold text-white mb-6">Advanced Features</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[
+                    { key: 'aiChatbot', label: 'AI Chatbot', description: 'Enable AI-powered responses' },
+                    { key: 'voiceToText', label: 'Voice to Text', description: 'Convert voice messages to text' },
+                    { key: 'textToVoice', label: 'Text to Voice', description: 'Convert text to voice messages' },
+                    { key: 'imageGeneration', label: 'Image Generation', description: 'Generate images with AI' },
+                    { key: 'weatherUpdates', label: 'Weather Updates', description: 'Provide weather information' },
+                    { key: 'newsUpdates', label: 'News Updates', description: 'Share latest news' }
+                  ].map((setting) => (
+                    <div key={setting.key} className="bg-white/5 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-white font-medium">{setting.label}</h4>
+                        <motion.button
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => updateSettings({ [setting.key]: !settings[setting.key as keyof Settings] })}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            settings[setting.key as keyof Settings] ? 'bg-green-500' : 'bg-gray-600'
+                          }`}
+                        >
+                          <motion.span
+                            animate={{
+                              x: settings[setting.key as keyof Settings] ? 20 : 2
+                            }}
+                            className="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                          />
+                        </motion.button>
+                      </div>
+                      <p className="text-white/60 text-sm">{setting.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Performance Settings */}
+              <div className="glass-effect rounded-2xl p-6">
+                <h3 className="text-xl font-bold text-white mb-6">Performance & Limits</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">
+                      Max Messages Per Minute: {settings.maxMessagesPerMinute}
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={settings.maxMessagesPerMinute}
+                      onChange={(e) => updateSettings({ maxMessagesPerMinute: parseInt(e.target.value) })}
+                      className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-white/70 text-sm font-medium mb-2">
+                      Response Delay: {settings.responseDelay}ms
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="5000"
+                      step="100"
+                      value={settings.responseDelay}
+                      onChange={(e) => updateSettings({ responseDelay: parseInt(e.target.value) })}
+                      className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'terminal' && (
+            <motion.div
+              key="terminal"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <Terminal />
+            </motion.div>
+          )}
+
+          {activeTab === 'developer' && (
+            <motion.div
+              key="developer"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <DeveloperPage />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

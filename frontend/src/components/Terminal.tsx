@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import io from 'socket.io-client';
 import { 
@@ -12,7 +12,19 @@ import {
   Trash2,
   Settings,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Filter,
+  Search,
+  AlertCircle,
+  CheckCircle,
+  Info,
+  AlertTriangle,
+  Zap,
+  Activity,
+  Server,
+  Database,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 interface LogEntry {
@@ -29,7 +41,9 @@ export default function Terminal() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [socket, setSocket] = useState<any>(null);
+  const [isLive, setIsLive] = useState(true);
   const terminalRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -42,16 +56,16 @@ export default function Terminal() {
       
       newSocket.on('connect', () => {
         setIsConnected(true);
-        addLog('info', 'Terminal connected to bot server');
+        addLog('success', 'Terminal connected to bot server', 'SYSTEM');
       });
 
       newSocket.on('disconnect', () => {
         setIsConnected(false);
-        addLog('error', 'Terminal disconnected from server');
+        addLog('error', 'Terminal disconnected from server', 'SYSTEM');
       });
 
       newSocket.on('bot-log', (data) => {
-        if (data.userId === user.id) {
+        if (data.userId === user.id && isLive) {
           const logEntry = parseLogEntry(data.log);
           setLogs(prev => [...prev, logEntry]);
         }
@@ -59,13 +73,25 @@ export default function Terminal() {
 
       newSocket.on('bot-connected', (data) => {
         if (data.userId === user.id) {
-          addLog('success', 'WhatsApp bot connected successfully');
+          addLog('success', 'WhatsApp bot connected successfully', 'CONNECTION');
         }
       });
 
       newSocket.on('bot-disconnected', (data) => {
         if (data.userId === user.id) {
-          addLog('warn', 'WhatsApp bot disconnected');
+          addLog('warn', 'WhatsApp bot disconnected', 'CONNECTION');
+        }
+      });
+
+      newSocket.on('bot-connecting', (data) => {
+        if (data.userId === user.id) {
+          addLog('info', 'WhatsApp bot connecting...', 'CONNECTION');
+        }
+      });
+
+      newSocket.on('bot-reconnecting', (data) => {
+        if (data.userId === user.id) {
+          addLog('warn', `WhatsApp bot reconnecting... (${data.attempt}/3)`, 'CONNECTION');
         }
       });
 
@@ -81,6 +107,18 @@ export default function Terminal() {
         }
       });
 
+      newSocket.on('qr-code', (data) => {
+        if (data.userId === user.id) {
+          addLog('info', 'QR code generated for WhatsApp connection', 'AUTH');
+        }
+      });
+
+      newSocket.on('pairing-code', (data) => {
+        if (data.userId === user.id) {
+          addLog('info', `Pairing code generated: ${data.code}`, 'AUTH');
+        }
+      });
+
       // Load existing logs
       fetchLogs();
 
@@ -88,7 +126,7 @@ export default function Terminal() {
         newSocket.disconnect();
       };
     }
-  }, [user]);
+  }, [user, isLive]);
 
   useEffect(() => {
     if (autoScroll && endRef.current) {
@@ -120,20 +158,26 @@ export default function Terminal() {
     let message = logString.replace(/\[.*?\]\s*/, '');
     let source = undefined;
 
-    if (message.includes('ERROR') || message.includes('error') || message.includes('failed')) {
+    // Determine log level
+    if (message.includes('ERROR') || message.includes('error') || message.includes('failed') || message.includes('Failed')) {
       level = 'error';
-    } else if (message.includes('WARN') || message.includes('warning')) {
+    } else if (message.includes('WARN') || message.includes('warning') || message.includes('expired') || message.includes('disconnected')) {
       level = 'warn';
-    } else if (message.includes('success') || message.includes('connected') || message.includes('completed')) {
+    } else if (message.includes('success') || message.includes('connected') || message.includes('completed') || message.includes('Successfully')) {
       level = 'success';
     }
 
+    // Determine source
     if (message.includes('Command executed:')) {
       source = 'COMMAND';
-    } else if (message.includes('QR code')) {
+    } else if (message.includes('QR code') || message.includes('Pairing code')) {
       source = 'AUTH';
-    } else if (message.includes('Message')) {
+    } else if (message.includes('Message') || message.includes('message')) {
       source = 'MESSAGE';
+    } else if (message.includes('connect') || message.includes('disconnect')) {
+      source = 'CONNECTION';
+    } else if (message.includes('Terminal') || message.includes('server')) {
+      source = 'SYSTEM';
     }
 
     return { timestamp, level, message, source };
@@ -151,7 +195,7 @@ export default function Terminal() {
 
   const clearLogs = () => {
     setLogs([]);
-    addLog('info', 'Terminal cleared');
+    addLog('info', 'Terminal cleared', 'SYSTEM');
   };
 
   const downloadLogs = () => {
@@ -168,6 +212,8 @@ export default function Terminal() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    
+    addLog('info', 'Logs downloaded successfully', 'SYSTEM');
   };
 
   const copyLogs = () => {
@@ -176,15 +222,27 @@ export default function Terminal() {
     ).join('\n');
     
     navigator.clipboard.writeText(logText);
-    addLog('info', 'Logs copied to clipboard');
+    addLog('info', 'Logs copied to clipboard', 'SYSTEM');
   };
 
   const filteredLogs = logs.filter(log => {
-    if (filter === 'all') return true;
-    if (filter === 'errors') return log.level === 'error';
-    if (filter === 'commands') return log.source === 'COMMAND';
-    if (filter === 'messages') return log.source === 'MESSAGE';
-    return log.level === filter;
+    // Filter by level/source
+    if (filter !== 'all') {
+      if (filter === 'errors' && log.level !== 'error') return false;
+      if (filter === 'warnings' && log.level !== 'warn') return false;
+      if (filter === 'success' && log.level !== 'success') return false;
+      if (filter === 'commands' && log.source !== 'COMMAND') return false;
+      if (filter === 'messages' && log.source !== 'MESSAGE') return false;
+      if (filter === 'auth' && log.source !== 'AUTH') return false;
+      if (filter === 'connection' && log.source !== 'CONNECTION') return false;
+    }
+    
+    // Filter by search term
+    if (searchTerm && !log.message.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    
+    return true;
   });
 
   const getLevelColor = (level: LogEntry['level']) => {
@@ -198,11 +256,32 @@ export default function Terminal() {
 
   const getLevelIcon = (level: LogEntry['level']) => {
     switch (level) {
-      case 'error': return '❌';
-      case 'warn': return '⚠️';
-      case 'success': return '✅';
-      default: return 'ℹ️';
+      case 'error': return AlertCircle;
+      case 'warn': return AlertTriangle;
+      case 'success': return CheckCircle;
+      default: return Info;
     }
+  };
+
+  const getSourceColor = (source?: string) => {
+    switch (source) {
+      case 'COMMAND': return 'text-purple-400';
+      case 'MESSAGE': return 'text-blue-400';
+      case 'AUTH': return 'text-green-400';
+      case 'CONNECTION': return 'text-cyan-400';
+      case 'SYSTEM': return 'text-gray-400';
+      case 'ERROR': return 'text-red-400';
+      default: return 'text-white/60';
+    }
+  };
+
+  const logStats = {
+    total: logs.length,
+    errors: logs.filter(l => l.level === 'error').length,
+    warnings: logs.filter(l => l.level === 'warn').length,
+    success: logs.filter(l => l.level === 'success').length,
+    commands: logs.filter(l => l.source === 'COMMAND').length,
+    messages: logs.filter(l => l.source === 'MESSAGE').length
   };
 
   return (
@@ -214,47 +293,100 @@ export default function Terminal() {
         className="flex items-center justify-between"
       >
         <div className="flex items-center space-x-4">
-          <div className="bg-gradient-to-r from-green-500 to-blue-500 w-12 h-12 rounded-full flex items-center justify-center">
-            <TerminalIcon className="w-6 h-6 text-white" />
+          <div className="bg-gradient-to-r from-green-500 to-blue-500 w-16 h-16 rounded-full flex items-center justify-center relative">
+            <TerminalIcon className="w-8 h-8 text-white" />
+            {isConnected && (
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full animate-pulse"></div>
+            )}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white">Bot Terminal</h2>
+            <h2 className="text-3xl font-bold text-white">Bot Terminal</h2>
             <p className="text-white/70">Real-time bot logs and monitoring</p>
           </div>
         </div>
         
-        <div className="flex items-center space-x-2">
-          <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
-            isConnected ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+        <div className="flex items-center space-x-4">
+          <div className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm backdrop-blur-sm border ${
+            isConnected 
+              ? 'bg-green-500/20 text-green-300 border-green-500/30' 
+              : 'bg-red-500/20 text-red-300 border-red-500/30'
           }`}>
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+            {isConnected ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
             <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+          </div>
+          
+          <div className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm backdrop-blur-sm border ${
+            isLive 
+              ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' 
+              : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+          }`}>
+            <Activity className={`w-4 h-4 ${isLive ? 'animate-pulse' : ''}`} />
+            <span>{isLive ? 'Live' : 'Paused'}</span>
           </div>
         </div>
       </motion.div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[
+          { label: 'Total', value: logStats.total, color: 'blue', icon: TerminalIcon },
+          { label: 'Errors', value: logStats.errors, color: 'red', icon: AlertCircle },
+          { label: 'Warnings', value: logStats.warnings, color: 'yellow', icon: AlertTriangle },
+          { label: 'Success', value: logStats.success, color: 'green', icon: CheckCircle },
+          { label: 'Commands', value: logStats.commands, color: 'purple', icon: Zap },
+          { label: 'Messages', value: logStats.messages, color: 'cyan', icon: Database }
+        ].map((stat, index) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="glass-effect rounded-xl p-4 text-center"
+          >
+            <stat.icon className={`w-6 h-6 text-${stat.color}-400 mx-auto mb-2`} />
+            <div className="text-2xl font-bold text-white">{stat.value}</div>
+            <div className="text-white/70 text-xs">{stat.label}</div>
+          </motion.div>
+        ))}
+      </div>
 
       {/* Terminal Controls */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="glass-effect rounded-xl p-4"
+        className="glass-effect rounded-2xl p-6"
       >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-4">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Logs</option>
-              <option value="info">Info</option>
-              <option value="success">Success</option>
-              <option value="warn">Warnings</option>
-              <option value="errors">Errors</option>
-              <option value="commands">Commands</option>
-              <option value="messages">Messages</option>
-            </select>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center space-x-2">
+              <Filter className="w-4 h-4 text-white/70" />
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Logs</option>
+                <option value="errors">Errors</option>
+                <option value="warnings">Warnings</option>
+                <option value="success">Success</option>
+                <option value="commands">Commands</option>
+                <option value="messages">Messages</option>
+                <option value="auth">Authentication</option>
+                <option value="connection">Connection</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <Search className="w-4 h-4 text-white/70" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search logs..."
+                className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+              />
+            </div>
             
             <div className="flex items-center space-x-2">
               <input
@@ -265,6 +397,17 @@ export default function Terminal() {
                 className="rounded"
               />
               <label htmlFor="autoScroll" className="text-white/70 text-sm">Auto-scroll</label>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="isLive"
+                checked={isLive}
+                onChange={(e) => setIsLive(e.target.checked)}
+                className="rounded"
+              />
+              <label htmlFor="isLive" className="text-white/70 text-sm">Live updates</label>
             </div>
           </div>
 
@@ -314,71 +457,94 @@ export default function Terminal() {
         {/* Terminal Window */}
         <div 
           ref={terminalRef}
-          className={`bg-black/80 rounded-lg border border-white/20 font-mono text-sm overflow-hidden ${
-            isMaximized ? 'h-96' : 'h-64'
+          className={`bg-black/90 rounded-xl border border-white/20 font-mono text-sm overflow-hidden backdrop-blur-sm ${
+            isMaximized ? 'h-[600px]' : 'h-80'
           }`}
         >
           {/* Terminal Header */}
-          <div className="bg-gray-800 px-4 py-2 flex items-center justify-between border-b border-white/20">
+          <div className="bg-gray-900/80 px-4 py-3 flex items-center justify-between border-b border-white/10">
             <div className="flex items-center space-x-2">
               <div className="w-3 h-3 bg-red-500 rounded-full"></div>
               <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
               <div className="w-3 h-3 bg-green-500 rounded-full"></div>
             </div>
-            <span className="text-white/70 text-xs">Bot Terminal - {user?.username}</span>
+            <div className="flex items-center space-x-4">
+              <span className="text-white/70 text-xs">Bot Terminal - {user?.username}</span>
+              <div className="flex items-center space-x-1">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-white/60 text-xs">{filteredLogs.length} logs</span>
+              </div>
+            </div>
           </div>
 
           {/* Terminal Content */}
           <div className="p-4 h-full overflow-y-auto custom-scrollbar">
             {filteredLogs.length === 0 ? (
-              <div className="text-white/50 text-center py-8">
-                <TerminalIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No logs to display</p>
-                <p className="text-xs mt-2">Logs will appear here when your bot is active</p>
+              <div className="text-white/50 text-center py-12">
+                <TerminalIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                <p className="text-lg mb-2">No logs to display</p>
+                <p className="text-sm">
+                  {searchTerm ? 'No logs match your search criteria' : 'Logs will appear here when your bot is active'}
+                </p>
               </div>
             ) : (
               <div className="space-y-1">
-                {filteredLogs.map((log, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex items-start space-x-3 py-1 hover:bg-white/5 rounded px-2 -mx-2"
-                  >
-                    <span className="text-white/50 text-xs mt-0.5 min-w-0 flex-shrink-0">
-                      {new Date(log.timestamp).toLocaleTimeString()}
-                    </span>
-                    <span className="text-xs mt-0.5">{getLevelIcon(log.level)}</span>
-                    {log.source && (
-                      <span className="text-purple-400 text-xs mt-0.5 min-w-0 flex-shrink-0">
-                        [{log.source}]
-                      </span>
-                    )}
-                    <span className={`${getLevelColor(log.level)} flex-1 min-w-0 break-words`}>
-                      {log.message}
-                    </span>
-                  </motion.div>
-                ))}
+                <AnimatePresence>
+                  {filteredLogs.map((log, index) => {
+                    const LevelIcon = getLevelIcon(log.level);
+                    return (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex items-start space-x-3 py-2 px-2 hover:bg-white/5 rounded-lg -mx-2 group"
+                      >
+                        <span className="text-white/40 text-xs mt-0.5 min-w-0 flex-shrink-0 font-mono">
+                          {new Date(log.timestamp).toLocaleTimeString()}
+                        </span>
+                        
+                        <LevelIcon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${getLevelColor(log.level)}`} />
+                        
+                        {log.source && (
+                          <span className={`text-xs mt-0.5 min-w-0 flex-shrink-0 px-2 py-0.5 rounded ${getSourceColor(log.source)} bg-white/10`}>
+                            {log.source}
+                          </span>
+                        )}
+                        
+                        <span className={`${getLevelColor(log.level)} flex-1 min-w-0 break-words leading-relaxed`}>
+                          {searchTerm ? (
+                            log.message.split(new RegExp(`(${searchTerm})`, 'gi')).map((part, i) => 
+                              part.toLowerCase() === searchTerm.toLowerCase() ? 
+                                <mark key={i} className="bg-yellow-400/30 text-yellow-200">{part}</mark> : 
+                                part
+                            )
+                          ) : (
+                            log.message
+                          )}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
                 <div ref={endRef} />
               </div>
             )}
           </div>
         </div>
 
-        {/* Terminal Stats */}
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: 'Total Logs', value: logs.length, color: 'blue' },
-            { label: 'Errors', value: logs.filter(l => l.level === 'error').length, color: 'red' },
-            { label: 'Commands', value: logs.filter(l => l.source === 'COMMAND').length, color: 'green' },
-            { label: 'Messages', value: logs.filter(l => l.source === 'MESSAGE').length, color: 'purple' }
-          ].map((stat, index) => (
-            <div key={index} className="text-center p-3 bg-white/5 rounded-lg">
-              <div className={`text-2xl font-bold text-${stat.color}-400`}>{stat.value}</div>
-              <div className="text-white/70 text-xs">{stat.label}</div>
-            </div>
-          ))}
+        {/* Terminal Footer */}
+        <div className="mt-4 flex items-center justify-between text-sm text-white/60">
+          <div className="flex items-center space-x-4">
+            <span>Showing {filteredLogs.length} of {logs.length} logs</span>
+            {searchTerm && <span>Search: "{searchTerm}"</span>}
+            {filter !== 'all' && <span>Filter: {filter}</span>}
+          </div>
+          <div className="flex items-center space-x-2">
+            <Server className="w-4 h-4" />
+            <span>Real-time monitoring active</span>
+          </div>
         </div>
       </motion.div>
     </div>
